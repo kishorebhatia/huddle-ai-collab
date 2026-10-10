@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./studio.css" />
 </head>
 <body>
   <header class="topbar">
@@ -20,7 +21,7 @@
     <div class="peers" id="peers"></div>
     <div class="actions">
       <div class="autonomy" title="How much agents do on their own">
-        <select id="roomMode">
+        <select id="roomMode" aria-label="Agent autonomy">
           <option value="suggest">Suggest only</option>
           <option value="auto" selected>Auto with gates</option>
           <option value="full">Full auto</option>
@@ -43,21 +44,23 @@
   </header>
 
   <nav class="tabs-mobile" id="mobileTabs">
-    <button data-col="feed" class="on">Live</button>
-    <button data-col="center">Brain</button>
-    <button data-col="work">Work</button>
+    <button data-col="tableCol">Table</button><button data-col="feed" class="on">Chat</button>
+    <button data-col="center">Brain / sketch</button>
+    <button data-col="work">Agents</button>
   </nav>
 
+  <nav class="room-rail" aria-label="Workspace rooms"><button class="btn ghost" id="roomsBtn">▧ Our rooms</button><div id="recentRooms"></div><button class="btn ghost" id="newRoomBtn">＋ New room</button><div id="studioTools"></div></nav>
   <main class="grid">
+    <section class="col studio-surface" id="tableCol"><div class="studio-heading"><div><h1 id="studioTitle">Shared workspace</h1><p>A workspace for people and autonomous agents.</p></div><button class="btn ghost" id="tableAdd">＋ Add</button></div><div class="table-heading"><h2>The shared table</h2><span id="tableCount">Drop images, video, audio or files</span></div><div id="sharedTable" tabindex="0" role="region" aria-label="Shared table. Drop files or paste a link."><div class="table-empty" id="tableEmpty"><h3>Put your first idea on the table.</h3><p>Drag in a file, paste a link, type a thought or start talking.</p></div><div id="tableItems"></div></div><form id="tableComposer"><input id="tableNote" aria-label="Add a note or link to the table" placeholder="A thought, a link, something unfinished…"/><button class="btn primary" type="submit">Add ↗</button><div class="table-actions"><button type="button" data-attach="image">Image</button><button type="button" data-attach="video">Video</button><button type="button" data-attach="audio">Audio</button><button type="button" data-attach="all">Files</button><button type="button" id="tableSketch">Sketch</button><span id="tableStatus" role="status"></span></div></form><input type="file" id="tableFiles" multiple hidden /></section>
     <!-- LIVE FEED -->
     <section class="col" id="feed">
       <div class="col-head">
-        <h2>Live</h2>
+        <h2>Group chat &amp; live room</h2>
         <span class="muted" id="feedCount"></span>
       </div>
       <ol class="events" id="events"></ol>
       <form class="composer" id="composer">
-        <textarea id="noteInput" rows="2" placeholder="Type a note, paste a link or an image… (Enter to send)"></textarea>
+        <textarea id="noteInput" rows="2" aria-label="Message the room" placeholder="Message the room… (Enter to send)"></textarea>
         <div class="composer-row">
           <label class="btn ghost small" title="Add a photo or screenshot">
             Image<input type="file" id="fileInput" accept="image/*" hidden />
@@ -99,15 +102,15 @@
 
       <div class="view" id="boardView" hidden>
         <div class="board-tools">
-          <button class="swatch on" data-color="#1f2937" style="--c:#1f2937"></button>
-          <button class="swatch" data-color="#2563eb" style="--c:#2563eb"></button>
-          <button class="swatch" data-color="#dc2626" style="--c:#dc2626"></button>
-          <button class="swatch" data-color="#16a34a" style="--c:#16a34a"></button>
+          <button class="swatch on" aria-label="Ink pen" data-color="#1f2937" style="--c:#1f2937"></button>
+          <button class="swatch" aria-label="Blue pen" data-color="#2563eb" style="--c:#2563eb"></button>
+          <button class="swatch" aria-label="Red pen" data-color="#dc2626" style="--c:#dc2626"></button>
+          <button class="swatch" aria-label="Green pen" data-color="#16a34a" style="--c:#16a34a"></button>
           <button class="btn ghost small" id="clearBoard">Clear</button>
           <span class="muted small">Everyone sees strokes live.</span>
           <button class="btn primary small" id="shareBoard">Send to brain</button>
         </div>
-        <canvas id="board" width="1600" height="1000"></canvas>
+        <canvas id="board" width="1600" height="1000" aria-label="Shared drawing canvas"></canvas>
       </div>
     </section>
 
@@ -117,11 +120,11 @@
         <h2>Agent work</h2>
       </div>
       <form class="newjob" id="newJob">
-        <select id="jobKind">
+        <select id="jobKind" aria-label="Job type">
           <option value="research">Research</option>
           <option value="prototype">Prototype</option>
         </select>
-        <input id="jobPrompt" placeholder="Ask an agent: research X / prototype Y" />
+        <input aria-label="Agent request" id="jobPrompt" placeholder="Ask an agent: research X / prototype Y" />
         <button class="btn primary small" type="submit">Run</button>
       </form>
       <div class="jobs">
@@ -177,7 +180,7 @@
     </div>
   </div>
 
-  <div class="toast" id="toast" hidden></div>
+  <dialog id="roomsDialog"><div class="rooms-heading"><h2>Our workspaces</h2><button class="btn ghost" id="roomsClose">Close</button></div><p>Each room is a separate workspace. Recently visited on this browser.</p><div id="roomMap"></div></dialog><div class="toast" id="toast" hidden></div>
 
   <script type="module" src="./app.js"></script>
 </body>
