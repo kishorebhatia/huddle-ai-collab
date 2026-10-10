@@ -1,0 +1,17 @@
+# secrets and local config
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.env.*
+!supabase/.env.example
+web/config.js
+
+# tooling
+.vercel/
+supabase/.temp/
+supabase/.branches/
+node_modules/
+
+# OS
+.DS_Store

@@ -1,0 +1,5 @@
+{
+  "buildCommand": "node scripts/write-config.mjs",
+  "outputDirectory": "web",
+  "framework": null
+}

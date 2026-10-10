@@ -1,0 +1,17 @@
+project_id = "huddle"
+
+# Hackathon: functions are open (room link = access). Tighten before real use.
+[functions.transcribe]
+verify_jwt = false
+
+[functions.see]
+verify_jwt = false
+
+[functions.synthesize]
+verify_jwt = false
+
+[functions.run-job]
+verify_jwt = false
+
+[functions.brain-api]
+verify_jwt = false

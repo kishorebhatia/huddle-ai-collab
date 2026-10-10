@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Huddle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <strong>Huddle</strong>
+      <span class="room" id="roomName"></span>
+    </div>
+    <div class="peers" id="peers"></div>
+    <div class="actions">
+      <button class="btn ghost" id="connectBtn" title="Let your own Claude/Gemini read and post">Connect your AI</button>
+      <button class="btn ghost" id="shareBtn">Copy invite link</button>
+      <div class="mic-wrap">
+        <select id="micMode" title="Mic mode">
+          <option value="auto">Auto (voice detect)</option>
+          <option value="ptt">Push-to-talk (hold Space)</option>
+        </select>
+        <button class="btn mic" id="micBtn" aria-pressed="false">
+          <span class="mic-icon">●</span><span id="micLabel">Mic off</span>
+          <span class="meter"><span id="meterFill"></span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs-mobile" id="mobileTabs">
+    <button data-col="feed" class="on">Live</button>
+    <button data-col="center">Brain</button>
+    <button data-col="work">Work</button>
+  </nav>
+
+  <main class="grid">
+    <!-- LIVE FEED -->
+    <section class="col" id="feed">
+      <div class="col-head">
+        <h2>Live</h2>
+        <span class="muted" id="feedCount"></span>
+      </div>
+      <ol class="events" id="events"></ol>
+      <form class="composer" id="composer">
+        <textarea id="noteInput" rows="2" placeholder="Type a note, paste a link or an image… (Enter to send)"></textarea>
+        <div class="composer-row">
+          <label class="btn ghost small" title="Add a photo or screenshot">
+            Image<input type="file" id="fileInput" accept="image/*" hidden />
+          </label>
+          <span class="muted small" id="sendStatus"></span>
+          <button class="btn primary small" type="submit">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- BRAIN + BOARD -->
+    <section class="col" id="center">
+      <div class="col-head">
+        <div class="seg">
+          <button class="on" data-view="brainView">Brain</button>
+          <button data-view="boardView">Board</button>
+        </div>
+        <span class="muted small" id="brainMeta"></span>
+        <button class="btn ghost small" id="synthBtn">Synthesize now</button>
+      </div>
+
+      <div class="view" id="brainView">
+        <div class="empty" id="brainEmpty">
+          Talk, type or sketch. Every minute Huddle folds what's new into this brief:
+          the goal, decisions, open questions, ideas and next steps — and proposes agent jobs.
+        </div>
+        <div id="brain" hidden>
+          <p class="goal" id="bGoal"></p>
+          <p class="summary" id="bSummary"></p>
+          <div class="changed" id="bChanged"></div>
+          <div class="brain-grid">
+            <div class="card"><h3>Decisions</h3><ul id="bDecisions"></ul></div>
+            <div class="card"><h3>Open questions</h3><ul id="bQuestions"></ul></div>
+            <div class="card"><h3>Ideas</h3><ul id="bIdeas"></ul></div>
+            <div class="card wide"><h3>Next steps</h3><ul id="bNext"></ul></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="boardView" hidden>
+        <div class="board-tools">
+          <button class="swatch on" data-color="#1f2937" style="--c:#1f2937"></button>
+          <button class="swatch" data-color="#2563eb" style="--c:#2563eb"></button>
+          <button class="swatch" data-color="#dc2626" style="--c:#dc2626"></button>
+          <button class="swatch" data-color="#16a34a" style="--c:#16a34a"></button>
+          <button class="btn ghost small" id="clearBoard">Clear</button>
+          <span class="muted small">Everyone sees strokes live.</span>
+          <button class="btn primary small" id="shareBoard">Send to brain</button>
+        </div>
+        <canvas id="board" width="1600" height="1000"></canvas>
+      </div>
+    </section>
+
+    <!-- JOBS + OUTPUTS -->
+    <section class="col" id="work">
+      <div class="col-head">
+        <h2>Agent work</h2>
+      </div>
+      <form class="newjob" id="newJob">
+        <select id="jobKind">
+          <option value="research">Research</option>
+          <option value="prototype">Prototype</option>
+        </select>
+        <input id="jobPrompt" placeholder="Ask an agent: research X / prototype Y" />
+        <button class="btn primary small" type="submit">Run</button>
+      </form>
+      <div class="jobs" id="jobs"></div>
+    </section>
+  </main>
+
+  <!-- Output viewer -->
+  <div class="overlay" id="viewer" hidden>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div>
+          <span class="badge" id="vKind"></span>
+          <strong id="vTitle"></strong>
+        </div>
+        <div class="sheet-actions">
+          <button class="btn ghost small" id="vOpen" hidden>Open in new tab</button>
+          <button class="btn ghost small" id="vClose">Close</button>
+        </div>
+      </div>
+      <div class="sheet-body" id="vBody"></div>
+      <form class="feedback" id="vFeedback">
+        <input id="vFeedbackInput" placeholder="Feedback → the agent revises (e.g. 'make onboarding 2 steps', 'dig into pricing')" />
+        <button class="btn primary small" type="submit">Revise</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Join -->
+  <div class="overlay" id="join" hidden>
+    <form class="sheet join" id="joinForm">
+      <h2>Join the huddle</h2>
+      <p class="muted">Your name tags what you say and post.</p>
+      <input id="joinName" placeholder="Your name" autocomplete="name" required />
+      <button class="btn primary" type="submit">Join</button>
+    </form>
+  </div>
+
+  <!-- Connect your AI -->
+  <div class="overlay" id="connect" hidden>
+    <div class="sheet">
+      <div class="sheet-head"><strong>Connect your own Claude / Gemini</strong>
+        <button class="btn ghost small" data-close="connect">Close</button></div>
+      <div class="sheet-body">
+        <p>Give your assistant these two commands (or paste the brief into its chat):</p>
+        <p class="muted small">Read the team's living brief:</p>
+        <pre id="curlGet"></pre>
+        <p class="muted small">Post a finding back into the room:</p>
+        <pre id="curlPost"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
