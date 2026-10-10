@@ -51,7 +51,15 @@ function initRooms(api) {
       document.getElementById(target).append(link);
     }
   }
-  document.getElementById('roomsBtn').onclick = () => document.getElementById('roomsDialog').showModal();
+  const toggle = document.getElementById('roomsBtn');
+  document.querySelector('.topbar').prepend(toggle);
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'workspaceRooms');
+  const rail = document.querySelector('.room-rail'); rail.id = 'workspaceRooms'; rail.inert = true;
+  const setOpen = open => { document.body.classList.toggle('rooms-open', open); rail.inert = !open; toggle.setAttribute('aria-expanded', String(open)); if (!open) toggle.focus(); };
+  toggle.onclick = () => setOpen(!document.body.classList.contains('rooms-open'));
+  const close = element('button', 'btn ghost', '← Close workspaces'); close.onclick = () => setOpen(false); rail.prepend(close);
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') setOpen(false); });
   document.getElementById('roomsClose').onclick = () => document.getElementById('roomsDialog').close();
   document.getElementById('newRoomBtn').onclick = () => {
     api.stopMic(); const url = new URL(location.href); url.searchParams.set('room', crypto.randomUUID().slice(0, 8)); location.assign(url.href);
@@ -164,6 +172,16 @@ function initDrop(api) {
   document.addEventListener('drop', event => { if ([...event.dataTransfer.types].includes('Files')) event.preventDefault(); });
 }
 export function renderAttachment(event, container) {
+  if (event.text && event.kind !== 'system') {
+    const ask = element('button', 'btn ghost small', 'Ask an agent ↗');
+    ask.onclick = () => {
+      openColumn('work');
+      const prompt = document.getElementById('jobPrompt');
+      prompt.value = `Follow up on this room contribution: ${event.text}`;
+      prompt.focus();
+    };
+    container.append(ask);
+  }
   const url = safeMediaURL(event.meta?.media_url); if (!url) return;
   const kind = fileKind(event.meta?.media_type);
   if (kind === 'audio' || kind === 'video') {
@@ -174,8 +192,11 @@ export function renderAttachment(event, container) {
   }
 }
 export function initStudio(api) {
-  document.getElementById('studioTools').append(document.getElementById('connectBtn'));
-  initRooms(api); initCapture(api); initDrop(api); openColumn('tableCol');
+  document.getElementById('work').append(document.getElementById('connectBtn'));
+  document.getElementById('composer').prepend(document.querySelector('.mic-wrap'));
+  document.getElementById('composer').append(document.querySelector('.table-actions'));
+  document.getElementById('work').querySelector('.col-head').after(document.querySelector('.autonomy'));
+  initRooms(api); initCapture(api); initDrop(api); openColumn('feed');
   let eventQueued = false; let jobQueued = false;
   new MutationObserver(() => { if (eventQueued) return; eventQueued = true; queueMicrotask(() => { eventQueued = false; syncBoard(); }); }).observe(document.getElementById('events'), {childList:true,subtree:true,characterData:true});
   new MutationObserver(() => { if (jobQueued) return; jobQueued = true; queueMicrotask(() => { jobQueued = false; syncOutputs(); }); }).observe(document.getElementById('jobs'), {childList:true,subtree:true,characterData:true});
