@@ -1,0 +1,3 @@
+Run `node --test tests/studio.test.mjs` from the repository root. These tests cover upload classification/limits, unsafe URLs, retention of all original UI hook IDs, and preservation of existing application behavior around additive studio hooks.
+
+Browser smoke verification used an ignored config.js with a placeholder project URL. It checked module startup, the original Connect your AI commands, and switching to the original whiteboard. It made no production backend calls. Real multi-client synchronization, storage uploads and model jobs still need validation against a staging project before deployment.

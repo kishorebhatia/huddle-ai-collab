@@ -1,3 +1,4 @@
+import { initStudio, renderAttachment } from "./studio.mjs";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { marked } from "https://esm.sh/marked@12.0.2";
 import DOMPurify from "https://esm.sh/dompurify@3.1.6";
@@ -92,6 +93,7 @@ function renderEvent(e) {
     img.onclick = () => window.open(e.image_url, "_blank");
     li.append(img);
   }
+  renderAttachment(e, li);
   const body = document.createElement("div");
   body.className = "ev-body";
   if (e.kind === "speech" || e.kind === "note" || e.kind === "system") body.textContent = e.text || "";
@@ -883,3 +885,6 @@ if (SUPABASE_URL.includes("YOUR-PROJECT")) {
 } else {
   start();
 }
+
+// Studio presentation uses the existing room, composer, storage and realtime paths.
+initStudio({ room, getAuthor: () => me, postNote, shareImage, sb, toast, stopMic });
