@@ -1,5 +1,7 @@
-// POST { room, force? } -> folds new events into the room's living brief and proposes agent jobs
+// POST { room, force? } -> folds new events into the room's living brief, starts agent pipelines for
+// actionable next steps, and turns spoken answers into decisions on pipelines waiting at a gate.
 import { cors, db, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
+import { createPipeline, invokeFn } from "../_shared/pipeline.ts";
 
 const item = (extra: Record<string, unknown> = {}) => ({
   type: "OBJECT",
@@ -28,21 +30,33 @@ const SCHEMA = {
         type: { type: "STRING", enum: ["research", "prototype", "decide", "ask"] },
       }),
     },
-    new_jobs: {
+    new_pipelines: {
       type: "ARRAY",
       items: {
         type: "OBJECT",
         properties: {
-          kind: { type: "STRING", enum: ["research", "prototype"] },
+          kind: { type: "STRING", enum: ["research", "build", "prototype"] },
           title: { type: "STRING" },
-          prompt: { type: "STRING" },
+          goal: { type: "STRING" },
         },
-        required: ["kind", "title", "prompt"],
+        required: ["kind", "title", "goal"],
       },
     },
-    obsolete_job_ids: { type: "ARRAY", items: { type: "INTEGER" } },
+    obsolete_pipeline_ids: { type: "ARRAY", items: { type: "INTEGER" } },
+    gate_answers: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          pipeline_id: { type: "INTEGER" },
+          decision: { type: "STRING", enum: ["approve", "skip", "stop"] },
+          answer: { type: "STRING" },
+        },
+        required: ["pipeline_id", "decision", "answer"],
+      },
+    },
   },
-  required: ["goal", "summary", "changed", "decisions", "questions", "ideas", "next_steps", "new_jobs", "obsolete_job_ids"],
+  required: ["goal", "summary", "changed", "decisions", "questions", "ideas", "next_steps", "new_pipelines", "obsolete_pipeline_ids", "gate_answers"],
 };
 
 const SYSTEM = `You are the shared brain of a small team working together live (often at a hackathon).
@@ -58,11 +72,15 @@ Rules:
 - summary: 2-4 sentences on where things stand.
 - changed: 1-4 short bullets on what changed since the previous brief (empty if nothing material).
 - next_steps: concrete actions with an owner when someone volunteered; type research | prototype | decide | ask.
-- new_jobs: ONLY for research or prototype next steps that an AI agent could do right now AND that are
-  not already covered by an existing job (listed below). Write a self-contained prompt with all the
-  context the agent needs. Propose at most 2 per update; propose none if the team is still exploring.
-- obsolete_job_ids: ids of jobs still "proposed" that the team's latest decisions made unnecessary
-  (e.g. research on a question that is now settled). Never list running or done jobs.
+- new_pipelines: agent work to START NOW for research/prototype next steps the team clearly wants,
+  that no existing pipeline (listed below) already covers. kind: "research" (find out only), "build"
+  (research then make it, review, publish), "prototype" (make it now). goal = a self-contained
+  instruction with every specific from the conversation. At most 2 per update; none while the team
+  is still exploring or undecided.
+- obsolete_pipeline_ids: ids of pipelines still "proposed" that the latest decisions made unnecessary.
+- gate_answers: for pipelines WAITING on a question, if a new event answers it (e.g. "yes publish it",
+  "target hackathon teams", "stop that one"), return pipeline_id, decision (approve | skip | stop) and
+  the answer in the speaker's words. Only when the answer is clear.
 - Never invent facts or decisions nobody stated.`;
 
 Deno.serve(async (req) => {
@@ -88,24 +106,26 @@ Deno.serve(async (req) => {
 
     if (!events?.length && !force) return json({ unchanged: true, brain });
 
-    const { data: jobs } = await sb
-      .from("jobs")
-      .select("id, kind, title, status")
+    const { data: pipes } = await sb
+      .from("pipelines")
+      .select("id, title, status, stages, current, gate")
       .eq("room_id", room)
-      .neq("status", "dismissed")
+      .not("status", "in", "(stopped)")
       .order("id", { ascending: false })
-      .limit(40);
-
+      .limit(30);
     const evText = (events ?? [])
       .map((e) => `[#${e.id} ${e.author} ${e.kind}] ${(e.text ?? "").slice(0, 2000)}`)
       .join("\n");
-    const jobText = (jobs ?? []).map((j) => `- #${j.id} ${j.kind} (${j.status}): ${j.title}`).join("\n") || "(none)";
+    const pipeText = (pipes ?? []).map((p) =>
+      `- #${p.id} ${p.title} [${p.status}, at ${p.stages[p.current]}]` +
+      (p.status === "waiting" && p.gate ? ` WAITING ON: ${p.gate.question}` : "")
+    ).join("\n") || "(none)";
 
     const next = await geminiJson<any>(
       [{
         text:
           `CURRENT BRIEF (JSON):\n${JSON.stringify(brain.state ?? {})}\n\n` +
-          `EXISTING JOBS:\n${jobText}\n\nNEW EVENTS:\n${evText || "(none)"}\n\nReturn the updated brief.`,
+          `AGENT PIPELINES:\n${pipeText}\n\nNEW EVENTS:\n${evText || "(none)"}\n\nReturn the updated brief.`,
       }],
       SCHEMA,
       SMART_MODEL,
@@ -113,10 +133,12 @@ Deno.serve(async (req) => {
       { thinkingConfig: { thinkingLevel: Deno.env.get("SYNTH_THINKING") ?? "low" } },
     );
 
-    const newJobs = (next.new_jobs ?? []).slice(0, 2);
-    const obsolete: number[] = next.obsolete_job_ids ?? [];
-    delete next.new_jobs;
-    delete next.obsolete_job_ids;
+    const newPipes = (next.new_pipelines ?? []).slice(0, 2);
+    const obsolete: number[] = next.obsolete_pipeline_ids ?? [];
+    const answers = next.gate_answers ?? [];
+    delete next.new_pipelines;
+    delete next.obsolete_pipeline_ids;
+    delete next.gate_answers;
     const lastId = events?.length ? events[events.length - 1].id : brain.last_event_id;
 
     // Optimistic concurrency: only one synthesis wins per version.
@@ -129,19 +151,21 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!updated) return json({ conflict: true });
 
-    if (newJobs.length) {
-      await sb.from("jobs").insert(
-        newJobs.map((j: any) => ({ room_id: room, kind: j.kind, title: j.title, prompt: j.prompt, created_by: "huddle" })),
-      );
+    const waiting = new Set((pipes ?? []).filter((p) => p.status === "waiting").map((p) => p.id));
+    for (const a of answers) {
+      if (waiting.has(a.pipeline_id)) await invokeFn("orchestrate", { pipeline_id: a.pipeline_id, action: a.decision, answer: a.answer });
+    }
+    for (const np of newPipes) {
+      await createPipeline(sb, { room, title: np.title, goal: np.goal, kind: np.kind, created_by: "huddle" });
     }
     if (obsolete.length) {
-      // Only ever dismiss jobs nobody has started.
-      await sb.from("jobs").update({ status: "dismissed" })
+      // Only ever drop pipelines nobody has started.
+      await sb.from("pipelines").update({ status: "stopped" })
         .eq("room_id", room).eq("status", "proposed").in("id", obsolete);
     }
-    return json({ brain: updated, proposed: newJobs.length, dismissed: obsolete.length });
+    return json({ brain: updated, started: newPipes.length, answered: answers.length, dismissed: obsolete.length });
   } catch (e) {
     console.error(e);
-    return json({ error: String(e?.message ?? e) }, 500);
+    return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
 });

@@ -44,6 +44,6 @@ Deno.serve(async (req) => {
     if (error) throw error;
     return json({ ok: true, event_id: data.id });
   } catch (e) {
-    return json({ error: String(e?.message ?? e) }, 500);
+    return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
 });

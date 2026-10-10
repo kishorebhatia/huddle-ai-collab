@@ -19,6 +19,14 @@
     </div>
     <div class="peers" id="peers"></div>
     <div class="actions">
+      <div class="autonomy" title="How much agents do on their own">
+        <select id="roomMode">
+          <option value="suggest">Suggest only</option>
+          <option value="auto" selected>Auto with gates</option>
+          <option value="full">Full auto</option>
+        </select>
+        <button class="btn ghost danger" id="stopAll">Stop all</button>
+      </div>
       <button class="btn ghost" id="connectBtn" title="Let your own Claude/Gemini read and post">Connect your AI</button>
       <button class="btn ghost" id="shareBtn">Copy invite link</button>
       <div class="mic-wrap">
@@ -116,7 +124,10 @@
         <input id="jobPrompt" placeholder="Ask an agent: research X / prototype Y" />
         <button class="btn primary small" type="submit">Run</button>
       </form>
-      <div class="jobs" id="jobs"></div>
+      <div class="jobs">
+        <div id="pipelines"></div>
+        <div id="jobs"></div>
+      </div>
     </section>
   </main>
 

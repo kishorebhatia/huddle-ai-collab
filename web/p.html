@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Huddle prototype</title>
+  <link rel="icon" href="data:," />
+  <style>
+    html, body { margin: 0; height: 100%; font: 13px/1.4 Inter, system-ui, sans-serif; background: #f6f5f2; color: #16181d; }
+    @media (prefers-color-scheme: dark) { html, body { background: #0f1115; color: #eceef3; } }
+    .bar { height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid rgba(127,127,127,.25); }
+    .bar .dot { width: 8px; height: 8px; border-radius: 50%; background: #2b59ff; }
+    .bar a { color: inherit; opacity: .7; margin-left: auto; }
+    .bar strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #root { height: calc(100% - 37px); }
+    iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+    .msg { padding: 40px; text-align: center; opacity: .7; }
+  </style>
+</head>
+<body>
+  <div class="bar"><span class="dot"></span><strong id="title">Huddle prototype</strong><a id="back" href="./">Made in Huddle</a></div>
+  <div id="root"><p class="msg">Loading…</p></div>
+  <script type="module">
+    import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
+    const id = Number(new URLSearchParams(location.search).get("id"));
+    const root = document.getElementById("root");
+    const fail = (t) => { root.innerHTML = ""; const p = document.createElement("p"); p.className = "msg"; p.textContent = t; root.append(p); };
+    if (!id) fail("No prototype id in the link.");
+    else {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/jobs?id=eq.${id}&kind=eq.prototype&select=title,room_id,output_html`, {
+        headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${SUPABASE_KEY}` },
+      }).catch(() => null);
+      const rows = r && r.ok ? await r.json() : [];
+      const job = rows[0];
+      if (!job?.output_html) fail("This prototype isn't available.");
+      else {
+        const title = job.title.replace(/\s*·\s*prototype.*$/i, "");
+        document.title = `${title} · Huddle`;
+        document.getElementById("title").textContent = title;
+        document.getElementById("back").href = `./?room=${encodeURIComponent(job.room_id)}`;
+        const f = document.createElement("iframe");
+        // Generated code runs sandboxed: scripts allowed, no access to this origin.
+        f.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups");
+        f.srcdoc = job.output_html;
+        root.replaceChildren(f);
+      }
+    }
+  </script>
+</body>
+</html>

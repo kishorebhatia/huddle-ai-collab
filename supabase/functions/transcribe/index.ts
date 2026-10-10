@@ -1,5 +1,6 @@
 // POST { room, author, audio: base64 WAV (16 kHz mono) } -> inserts a 'speech' event
-import { cors, db, gemini, geminiJson, json } from "../_shared/util.ts";
+import { background, cors, db, gemini, geminiJson, json } from "../_shared/util.ts";
+import { invokeFn } from "../_shared/pipeline.ts";
 
 const words = (s: string) =>
   new Set(s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").split(/\s+/).filter(Boolean));
@@ -103,9 +104,11 @@ Deno.serve(async (req) => {
       .select()
       .single();
     if (error) throw error;
+    // Spoken requests ("Huddle, research X") start a pipeline right away, after we've replied.
+    background(invokeFn("intake", { room, author, text, event_id: data.id }));
     return json({ event: data });
   } catch (e) {
     console.error(e);
-    return json({ error: String(e?.message ?? e) }, 500);
+    return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
 });

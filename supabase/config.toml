@@ -15,3 +15,9 @@ verify_jwt = false
 
 [functions.brain-api]
 verify_jwt = false
+
+[functions.orchestrate]
+verify_jwt = false
+
+[functions.intake]
+verify_jwt = false

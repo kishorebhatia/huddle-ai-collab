@@ -53,7 +53,7 @@ async function fn(name, body) {
 }
 
 // ---------- state ----------
-const state = { events: new Map(), jobs: new Map(), brain: null, peers: [] };
+const state = { events: new Map(), jobs: new Map(), pipelines: new Map(), brain: null, peers: [], room: null };
 
 // ---------- live feed ----------
 const KIND_LABEL = { speech: "said", note: "note", link: "link", image: "board", finding: "finding", feedback: "feedback", system: "agent" };
@@ -205,17 +205,148 @@ setInterval(() => {
 // ---------- jobs & outputs ----------
 const STATUS_LABEL = { proposed: "proposed", running: "running…", done: "done", failed: "failed", dismissed: "dismissed" };
 
+// ---------- pipelines (autonomous chains) ----------
+const PIPE_STATUS = { proposed: "proposed", running: "running", waiting: "needs you", done: "done", failed: "failed", stopped: "stopped" };
+
+async function pipeAct(id, action, answer) {
+  try { await fn("orchestrate", { pipeline_id: id, action, answer }); }
+  catch (e) { toast(`Couldn't ${action}: ${e.message}`); }
+}
+
+function renderPipelines() {
+  const wrap = $("pipelines");
+  wrap.innerHTML = "";
+  const order = { waiting: 0, running: 1, proposed: 2, failed: 3, done: 4, stopped: 5 };
+  const pipes = [...state.pipelines.values()].sort((a, b) => (order[a.status] - order[b.status]) || (b.id - a.id));
+  if (pipes.length) {
+    const lab = document.createElement("div");
+    lab.className = "section-label";
+    lab.textContent = "Pipelines";
+    wrap.append(lab);
+  }
+  const jobsOf = (pid) => [...state.jobs.values()].filter((j) => j.pipeline_id === pid);
+  for (const p of pipes) {
+    const card = document.createElement("div");
+    card.className = `pipe st-${p.status}`;
+    const top = document.createElement("div");
+    top.className = "pipe-top";
+    const st = document.createElement("span");
+    st.className = `status s-${p.status === "waiting" ? "proposed" : p.status}`;
+    st.textContent = PIPE_STATUS[p.status] || p.status;
+    const by = document.createElement("span");
+    by.className = "muted small";
+    by.textContent = `#${p.id} · ${p.created_by}`;
+    top.append(st, by);
+    const title = document.createElement("div");
+    title.className = "pipe-title";
+    title.textContent = p.title;
+    card.append(top, title);
+
+    // stage chips: research → review → prototype → review → host
+    const js = jobsOf(p.id);
+    const row = document.createElement("div");
+    row.className = "stages";
+    p.stages.forEach((name, i) => {
+      if (i) { const a = document.createElement("span"); a.className = "arrow"; a.textContent = "→"; row.append(a); }
+      const mine = js.filter((j) => j.stage_index === i);
+      const last = mine[mine.length - 1];
+      const chip = document.createElement("span");
+      let cls = "stage";
+      if (p.status === "waiting" && p.gate && p.gate.stage === i) cls += " gate";
+      else if (last?.status === "running" || last?.status === "proposed") cls += " running";
+      else if (last?.status === "done") cls += " done";
+      else if (last?.status === "failed") cls += " failed";
+      if (mine.length > 1) cls += " revised";
+      chip.className = cls;
+      if (cls.includes("running")) { const sp = document.createElement("span"); sp.className = "spinner"; chip.append(sp); }
+      const label = document.createElement("span");
+      label.textContent = name === "review" && last?.review ? `review ${last.review.score}/10` : name;
+      chip.append(label);
+      if (last?.status === "done") { chip.title = "Open output"; chip.onclick = () => openViewer(last.id); }
+      if (last?.status === "failed") chip.title = last.error || "failed";
+      row.append(chip);
+    });
+    card.append(row);
+
+    if (p.status === "waiting" && p.gate) {
+      const g = document.createElement("div");
+      g.className = "gatebox";
+      const q = document.createElement("p");
+      q.textContent = p.gate.question;
+      const r = document.createElement("div");
+      r.className = "row";
+      const b = (label, cls, onclick) => { const x = document.createElement("button"); x.className = `btn small ${cls}`; x.textContent = label; x.onclick = onclick; r.append(x); };
+      if (p.gate.kind === "question") {
+        const inp = document.createElement("input");
+        inp.placeholder = "Answer (or just say it out loud)";
+        r.append(inp);
+        b("Answer", "primary", () => inp.value.trim() && pipeAct(p.id, "approve", inp.value.trim()));
+        b("Use best judgment", "ghost", () => pipeAct(p.id, "skip"));
+      } else if (p.gate.kind === "publish") {
+        b("Publish", "primary", () => pipeAct(p.id, "approve"));
+        b("Don't publish", "ghost", () => pipeAct(p.id, "skip"));
+      } else {
+        b("Continue", "primary", () => pipeAct(p.id, "approve"));
+        b("Stop", "ghost", () => pipeAct(p.id, "stop"));
+      }
+      g.append(q, r);
+      card.append(g);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "job-actions";
+    const act = (label, cls, onclick) => { const x = document.createElement("button"); x.className = `btn small ${cls}`; x.textContent = label; x.onclick = onclick; actions.append(x); };
+    if (p.host_url) {
+      const a = document.createElement("a");
+      a.className = "live"; a.href = p.host_url; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "● Live — open ↗";
+      actions.append(a);
+    }
+    if (p.status === "proposed") { act("Start", "primary", () => pipeAct(p.id, "start")); act("Dismiss", "ghost", () => pipeAct(p.id, "stop")); }
+    if (p.status === "running" || p.status === "waiting") act("Stop", "ghost", () => pipeAct(p.id, "stop"));
+    if (p.status === "failed" || p.status === "stopped") act("Restart", "ghost", () => pipeAct(p.id, "start"));
+    if (actions.childElementCount) card.append(actions);
+    wrap.append(card);
+  }
+}
+
+function renderRoomControls() {
+  const r = state.room;
+  if (!r) return;
+  $("roomMode").value = r.mode;
+  $("stopAll").textContent = r.paused ? "Resume agents" : "Stop all";
+  $("stopAll").classList.toggle("resume", r.paused);
+}
+$("roomMode").onchange = async () => {
+  const mode = $("roomMode").value;
+  const { error } = await sb.from("rooms").update({ mode }).eq("id", room);
+  if (error) toast(error.message);
+  else toast(mode === "suggest" ? "Agents will only propose work" : mode === "auto" ? "Agents run on their own, and ask before publishing" : "Agents run end to end, including publishing");
+};
+$("stopAll").onclick = async () => {
+  const paused = state.room?.paused;
+  try { await fn("orchestrate", { room, action: paused ? "resume" : "stop_all" }); }
+  catch (e) { toast(e.message); }
+};
+
 function renderJobs() {
+  renderPipelines();
   const wrap = $("jobs");
   wrap.innerHTML = "";
-  const jobs = [...state.jobs.values()].filter((j) => j.status !== "dismissed").sort((a, b) => {
+  const jobs = [...state.jobs.values()].filter((j) => j.status !== "dismissed" && !j.pipeline_id).sort((a, b) => {
     const order = { proposed: 0, running: 1, failed: 2, done: 3 };
     return (order[a.status] - order[b.status]) || (b.id - a.id);
   });
-  if (!jobs.length) {
+  if (jobs.length && state.pipelines.size) {
+    const lab = document.createElement("div");
+    lab.className = "section-label";
+    lab.textContent = "Single jobs";
+    wrap.append(lab);
+  }
+  if (!jobs.length && !state.pipelines.size) {
     const p = document.createElement("p");
     p.className = "empty";
-    p.textContent = "Research and prototype jobs appear here — proposed by the brain or asked for above. Outputs open in place.";
+    p.textContent = "Say \"Huddle, research …\" or \"Huddle, build …\" — agents research, review, prototype and publish on their own, and ask the room before going public.";
     wrap.append(p);
   }
   for (const j of jobs) {
@@ -364,6 +495,7 @@ function openViewer(id) {
     }
     $("vOpen").hidden = true;
   }
+  $("vFeedback").hidden = !["research", "prototype"].includes(j.kind);
   $("viewer").hidden = false;
 }
 $("vOpen").onclick = () => blobUrl && window.open(blobUrl, "_blank");
@@ -390,8 +522,9 @@ $("vFeedback").onsubmit = async (ev) => {
 // ---------- composer: notes, links, images ----------
 async function postNote(text) {
   const kind = /^https?:\/\/\S+$/.test(text) ? "link" : "note";
-  const { error } = await sb.from("events").insert({ room_id: room, author: me, kind, text });
-  if (error) toast(error.message);
+  const { data, error } = await sb.from("events").insert({ room_id: room, author: me, kind, text }).select().single();
+  if (error) return toast(error.message);
+  if (kind === "note") fn("intake", { room, author: me, text, event_id: data.id }).catch(() => {});
 }
 $("composer").onsubmit = (ev) => {
   ev.preventDefault();
@@ -671,11 +804,17 @@ function renderPeers() {
 let roomChannel = null;
 
 async function loadInitial() {
-  const [ev, jobs, brain] = await Promise.all([
+  await sb.from("rooms").upsert({ id: room }, { onConflict: "id", ignoreDuplicates: true });
+  const [ev, jobs, brain, pipes, roomRow] = await Promise.all([
     sb.from("events").select("*").eq("room_id", room).order("id", { ascending: false }).limit(200),
     sb.from("jobs").select("*").eq("room_id", room).order("id"),
     sb.from("brain").select("*").eq("room_id", room).maybeSingle(),
+    sb.from("pipelines").select("*").eq("room_id", room).order("id"),
+    sb.from("rooms").select("*").eq("id", room).maybeSingle(),
   ]);
+  (pipes.data || []).forEach((p) => state.pipelines.set(p.id, p));
+  state.room = roomRow.data;
+  renderRoomControls();
   if (ev.error) toast(`Can't reach Supabase: ${ev.error.message}`, 6000);
   (ev.data || []).reverse().forEach((e) => { state.events.set(e.id, e); renderEvent(e); });
   $("events").scrollTop = $("events").scrollHeight;
@@ -694,10 +833,20 @@ function subscribe() {
         const prev = state.jobs.get(j.id);
         state.jobs.set(j.id, j);
         renderJobs();
-        if (prev && prev.status !== "done" && j.status === "done") toast(`Ready: ${j.title}`);
+        if (!j.pipeline_id && prev && prev.status !== "done" && j.status === "done") toast(`Ready: ${j.title}`);
       })
     .on("postgres_changes", { event: "*", schema: "public", table: "brain", filter: `room_id=eq.${room}` },
       ({ new: b }) => { state.brain = b; renderBrain(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "pipelines", filter: `room_id=eq.${room}` },
+      ({ new: p }) => {
+        const prev = state.pipelines.get(p.id);
+        state.pipelines.set(p.id, p);
+        renderJobs();
+        if (p.status === "waiting" && prev?.status !== "waiting") toast(`Needs a decision: ${p.title}`);
+        if (p.host_url && !prev?.host_url) toast(`Live: ${p.title}`);
+      })
+    .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room}` },
+      ({ new: r }) => { state.room = r; renderRoomControls(); })
     .subscribe();
 
   roomChannel = sb.channel(`room-${room}`, { config: { presence: { key: clientId }, broadcast: { self: false } } });

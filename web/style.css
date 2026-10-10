@@ -199,3 +199,36 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); }
   .col.show { display: flex; }
   .brain-grid { grid-template-columns: 1fr; }
 }
+
+/* autonomy controls */
+.autonomy { display: flex; gap: 6px; align-items: center; }
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.btn.danger.resume { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
+
+/* pipelines */
+#pipelines { display: flex; flex-direction: column; gap: 10px; }
+#pipelines:empty { display: none; }
+#jobs { display: flex; flex-direction: column; gap: 10px; }
+.pipe { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.pipe.st-running { border-color: var(--accent); }
+.pipe.st-waiting { border-color: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 15%, transparent); }
+.pipe.st-done { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.pipe.st-proposed { border-style: dashed; }
+.pipe-top { display: flex; gap: 8px; align-items: center; }
+.pipe-top .muted { margin-left: auto; }
+.pipe-title { font-weight: 600; }
+.stages { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.stage { border: 1px solid var(--line); background: var(--bg); color: var(--ink-2); border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 500; display: inline-flex; gap: 5px; align-items: center; cursor: default; }
+.stage.done { background: color-mix(in srgb, var(--good) 12%, var(--panel)); color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, var(--line)); cursor: pointer; }
+.stage.running { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.stage.failed { color: var(--bad); border-color: var(--bad); }
+.stage.gate { color: var(--warn); border-color: var(--warn); }
+.stage.revised::after { content: "↺"; font-size: 10px; }
+.stage .spinner { width: 9px; height: 9px; border-width: 1.5px; }
+.arrow { color: var(--ink-2); font-size: 11px; }
+.gatebox { background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.gatebox p { margin: 0; font-weight: 500; }
+.gatebox .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.gatebox input { flex: 1; min-width: 140px; }
+.live { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; color: var(--good); text-decoration: none; }
+.section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); margin: 4px 2px 0; }

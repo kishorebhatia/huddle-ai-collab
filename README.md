@@ -32,7 +32,7 @@ cp supabase/.env.example supabase/.env  # GEMINI_API_KEY
 # Backend: tables + realtime + storage bucket, the Gemini secret, and the five Edge Functions
 npx supabase login
 npx supabase link --project-ref <your-project-ref>
-npx supabase db push
+npx supabase db push                     # edit YOUR-PROJECT-REF in the sweep_cron migration first
 npx supabase secrets set --env-file supabase/.env
 npx supabase functions deploy --use-api   # config.toml turns off JWT checks for the hackathon
 
@@ -55,6 +55,33 @@ Send teammates `https://<your-deploy>/?room=<anything>`. A new room is created a
 
 **What is git-ignored:** `.env`, `supabase/.env`, `web/config.js` (generated), `.vercel/`, `supabase/.temp/`.
 The publishable key is designed to be public (it ships to every browser); access is governed by RLS.
+
+## Autonomous agent work (Auto with gates)
+
+Say it, and it happens: **"Huddle, research X and build us Y."** The `intake` function spots requests
+in speech and typed notes and starts a **pipeline** immediately; the brief update also starts pipelines
+for clear next steps. Each pipeline runs on its own:
+
+```
+research ──► review ──► prototype ──► review ──► [gate: publish?] ──► host (public share link)
+              │ revise once if weak        │ revise once
+              └─ may ask the room a question (answer by voice or button)
+```
+
+- **Context pack:** every stage gets the brief, the last 40 lines of conversation, and earlier stage outputs.
+- **Review:** a separate Gemini pass scores the work 1–10 against the goal; one automatic revision if needed.
+- **Gates:** publishing, questions only the humans can answer, and the hourly budget. Answer out loud
+  ("yes, publish it", "target hackathon teams") — the brief update matches answers to waiting gates.
+- **Modes (top bar):** *Suggest only* (propose, you press Start) · *Auto with gates* (default) · *Full auto*.
+  **Stop all** pauses every pipeline in the room.
+- **Hosting:** published prototypes get a public page at `<your site>/p.html?id=<job>` (sandboxed).
+  Set `HOST_MODE=vercel` + `VERCEL_TOKEN`/`VERCEL_TEAM_ID` to deploy each prototype as its own Vercel
+  project instead (new Vercel projects may have Deployment Protection on; turn it off yourself if you want them public).
+- **Orchestration:** `run-job` hands back to `orchestrate` when a stage ends; a pg_cron job calls
+  `orchestrate {sweep:true}` every minute to restart anything stalled.
+
+Measured on the live project: spoken request → research (16 s) → review → prototype (~40 s) → review →
+publish gate ≈ 80 s; publishing after approval ≈ 3 s.
 
 ## Using it
 
