@@ -60,7 +60,7 @@ async function contextPack(sb: SupabaseClient, job: any) {
   const { data: brain } = await sb.from("brain").select("state").eq("room_id", job.room_id).maybeSingle();
   const s = brain?.state ?? {};
   const { data: recent } = await sb.from("events").select("id, author, kind, text")
-    .eq("room_id", job.room_id).neq("kind", "system").order("id", { ascending: false }).limit(40);
+    .eq("room_id", job.room_id).neq("kind", "system").eq("forgotten", false).order("id", { ascending: false }).limit(40);
   const convo = (recent ?? []).reverse()
     .map((e) => `[#${e.id} ${e.author} ${e.kind}] ${(e.text ?? "").slice(0, 600)}`).join("\n");
 

@@ -37,17 +37,12 @@
     <button class="btn ai sm donly" id="connectBtn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/></svg>Connect your AI
     </button>
-    <div class="mic-wrap donly">
-      <select id="micMode" title="Mic mode" aria-label="Mic mode">
-        <option value="auto">Auto</option>
-        <option value="ptt">Hold Space</option>
-      </select>
-      <button class="btn talk" id="micBtn" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-        <span id="micLabel">Talk</span>
-        <span class="meter" aria-hidden="true"><span id="meterFill"></span></span>
-      </button>
-    </div>
+    <button class="btn dk sm donly" id="forgetBtn" hidden title="Erase what you said in the last 2 minutes">Forget last 2 min</button>
+    <button class="btn talk donly" id="micBtn" aria-pressed="false">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <span id="micLabel">Talk</span>
+      <span class="meter" aria-hidden="true"><span id="meterFill"></span></span>
+    </button>
   </header>
 
   <!-- ===== Three zones ===== -->
@@ -73,7 +68,18 @@
           <div class="crow">
             <label class="ico" title="Add a photo or screenshot" aria-label="Add a photo or screenshot">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>
-              <input type="file" id="fileInput" accept="image/*" hidden />
+              <input type="file" accept="image/*" hidden class="pick" data-kind="image" multiple />
+            </label>
+            <label class="ico" title="Add a video" aria-label="Add a video">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg>
+              <input type="file" accept="video/*" hidden class="pick" data-kind="video" />
+            </label>
+            <button class="ico" id="voiceNoteBtn" title="Record a voice note" aria-label="Record a voice note">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11v2"/></svg>
+            </button>
+            <label class="ico" title="Add a file (PDF, text, slides…)" aria-label="Add a file">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+              <input type="file" hidden class="pick" data-kind="file" multiple />
             </label>
             <button class="ico" id="sketchBtn" title="Sketch on the board" aria-label="Sketch on the board">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>
@@ -84,7 +90,7 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Send
             </button>
           </div>
-          <p class="dropnote">Paste or drop images anywhere. Talk any time your mic is on.</p>
+          <p class="dropnote">Drop or paste anything onto the room: images, video, audio, files.</p>
         </div>
       </div>
     </section>
@@ -133,19 +139,38 @@
         </div>
       </div>
 
-      <div class="scroll board" id="boardView" hidden>
-        <div class="board-tools">
-          <button class="swatch on" data-color="#1E2A22" style="--c:#1E2A22" aria-label="Dark pen"></button>
-          <button class="swatch" data-color="#1D4ED8" style="--c:#1D4ED8" aria-label="Blue pen"></button>
-          <button class="swatch" data-color="#B42318" style="--c:#B42318" aria-label="Red pen"></button>
-          <button class="swatch" data-color="#1F6B45" style="--c:#1F6B45" aria-label="Green pen"></button>
-          <button class="btn ghost sm" id="clearBoard">Clear</button>
-          <span class="muted small grow">Everyone sees strokes live.</span>
-          <button class="btn pri sm" id="shareBoard">Send to the brief</button>
+      <div class="bwrap" id="boardView" hidden>
+        <div class="bsurf" id="bsurf" aria-label="Board: an endless shared workspace. Drag the background to move around.">
+          <div class="blayer" id="blayer"><svg class="ink" id="ink" aria-hidden="true"></svg></div>
         </div>
-        <canvas id="board" width="1600" height="1000"></canvas>
-        <p class="secl">On the board <span class="n" id="nBoard"></span></p>
-        <div class="bgal" id="boardGallery"></div>
+        <div class="btool">
+          <button class="btn pri sm" id="addBtn" aria-expanded="false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add anything
+          </button>
+          <div class="penbar" id="penBar" hidden>
+            <button class="swatch on" data-color="#1E2A22" style="--c:#1E2A22" aria-label="Dark pen"></button>
+            <button class="swatch" data-color="#1D4ED8" style="--c:#1D4ED8" aria-label="Blue pen"></button>
+            <button class="swatch" data-color="#B42318" style="--c:#B42318" aria-label="Red pen"></button>
+            <button class="swatch" data-color="#1F6B45" style="--c:#1F6B45" aria-label="Green pen"></button>
+            <button class="btn pri sm" id="penDone">Done</button>
+            <button class="btn ghost sm" id="penCancel">Cancel</button>
+          </div>
+        </div>
+        <div class="addmenu" id="addMenu" hidden>
+          <button class="opt" data-add="note">Note</button>
+          <button class="opt" data-add="sketch">Sketch</button>
+          <button class="opt" data-add="image">Photo</button>
+          <button class="opt" data-add="video">Video</button>
+          <button class="opt" data-add="voice">Voice note</button>
+          <button class="opt" data-add="file">File</button>
+        </div>
+        <div class="bzoom">
+          <button class="ico" id="zoomOut" aria-label="Zoom out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+          <span id="zoomLabel">100%</span>
+          <button class="ico" id="zoomIn" aria-label="Zoom in"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="btn ghost sm" id="zoomFit">Fit</button>
+        </div>
+        <p class="bhint donly" id="bHint">Drag cards to arrange · drag the background to move · everyone sees changes live</p>
       </div>
     </section>
 
@@ -237,8 +262,9 @@
     <p class="muted" style="font-size:14px;margin:0">You’ll get one link. Anyone you send it to can join from a laptop or phone.</p>
     <label class="lab" for="newName">Name</label>
     <input id="newName" class="inp" placeholder="e.g. Hackathon team, Q4 launch, Garden plan" />
-    <label class="lab" for="newGoal">What are you trying to do? <span class="muted" style="font-weight:400">Optional. Huddle starts the brief with it.</span></label>
-    <textarea id="newGoal" class="inp" rows="3" placeholder="e.g. Pick one idea and ship a demo by 6 pm"></textarea>
+    <p class="lab">Who can join</p>
+    <button class="vswitch light" id="newVis" role="switch" aria-checked="false" aria-label="Private huddle"><span class="vside vpub">Public</span><span class="vtrack" aria-hidden="true"><span class="vknob"></span></span><span class="vside vpriv">Private</span></button>
+    <p class="muted small" style="margin:4px 0 0">Public: anyone with the link can join.</p>
     <div class="crow" style="margin-top:18px"><button class="btn pri" id="createRoom">Start huddle and copy link</button></div>
   </div>
 </div>
@@ -264,10 +290,13 @@
 <div class="ov" id="shareSheet" hidden>
   <div class="sheet" role="dialog" aria-label="Share into the room">
     <div class="sheet-head"><h2>Share into the room</h2><button class="btn ghost sm" data-close="shareSheet">Close</button></div>
-    <p class="muted" style="font-size:13.5px;margin:0">It lands in the stream. Huddle reads it and folds it into the brief.</p>
+    <p class="muted" style="font-size:13.5px;margin:0">It lands in the stream and on the board. Huddle reads, watches or listens to it and folds it into the brief.</p>
     <div class="sharegrid">
-      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>Camera<input type="file" accept="image/*" capture="environment" hidden class="shareFile" /></label>
-      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg></span>Photo<input type="file" accept="image/*" hidden class="shareFile" /></label>
+      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>Camera<input type="file" accept="image/*" capture="environment" hidden class="pick" data-kind="image" /></label>
+      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg></span>Photo<input type="file" accept="image/*" hidden class="pick" data-kind="image" /></label>
+      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg></span>Video<input type="file" accept="video/*" hidden class="pick" data-kind="video" /></label>
+      <button class="share" data-share="voice"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11v2"/></svg></span>Voice note</button>
+      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg></span>File<input type="file" hidden class="pick" data-kind="file" /></label>
       <button class="share" data-share="link"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span>Link</button>
       <button class="share" data-share="note"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6"/></svg></span>Note</button>
       <button class="share" data-share="sketch"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></span>Sketch</button>
@@ -279,6 +308,7 @@
   <div class="sheet wide">
     <div class="sheet-head">
       <div style="flex:1;min-width:0"><span class="kb" id="vKind"></span><h2 id="vTitle" style="margin-top:6px"></h2></div>
+      <button class="btn ghost sm" id="vPin">Put on the board</button>
       <button class="btn ghost sm" id="vOpen" hidden>Open in new tab</button>
       <button class="btn ghost sm" id="vClose">Close</button>
     </div>
@@ -305,6 +335,10 @@
   </div>
 </div>
 
+<div class="recbar" id="recBar" role="status" hidden>
+  <span class="recdot" aria-hidden="true"></span><b>Recording voice note</b><span class="mono" id="recTime">0:00</span>
+  <button class="btn pri sm" id="recStop">Stop and share</button><button class="btn ghost sm" id="recCancel">Cancel</button>
+</div>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script type="module" src="./app.js"></script>

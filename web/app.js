@@ -90,7 +90,7 @@ async function fn(name, body) {
 }
 
 // ---------- state ----------
-const state = { events: new Map(), jobs: new Map(), pipelines: new Map(), brain: null, peers: [], room: null };
+const state = { events: new Map(), jobs: new Map(), pipelines: new Map(), board: new Map(), brain: null, peers: [], room: null };
 const ui = {
   filter: "all", showAll: false, thread: null, view: "brief", tab: "brief", focus: false,
   openGroups: new Set(), openJobs: new Set(), doneOpen: false,
@@ -101,20 +101,20 @@ function renderAll() {
   renderQueued = true;
   requestAnimationFrame(() => {
     renderQueued = false;
-    renderStream(); renderBrain(); renderBoardGallery(); renderWork(); renderJoinInfo();
+    renderStream(); renderBrain(); renderBoard(); renderWork(); renderJoinInfo();
   });
 }
 
 // ==========================================================================
 // STREAM — people only. Speech clips from one person in a row merge into one paragraph.
 // ==========================================================================
-const KIND_LABEL = { speech: "said", note: "note", link: "link", image: "image", finding: "finding", feedback: "feedback" };
-const FILTERS = { voice: ["speech"], text: ["note", "link", "finding", "feedback"], media: ["image"] };
+const KIND_LABEL = { speech: "said", note: "note", link: "link", image: "image", finding: "finding", feedback: "feedback", voice: "voice note", video: "video", file: "file" };
+const FILTERS = { voice: ["speech", "voice"], text: ["note", "link", "finding", "feedback"], media: ["image", "video", "file"] };
 const STREAM_LIMIT = 30;
 const idToGroup = new Map();
 
 function groupEvents() {
-  const evs = [...state.events.values()].filter((e) => e.kind !== "system").sort((a, b) => a.id - b.id);
+  const evs = [...state.events.values()].filter((e) => e.kind !== "system" && !e.forgotten).sort((a, b) => a.id - b.id);
   const groups = [];
   for (const e of evs) {
     const last = groups[groups.length - 1];
@@ -174,6 +174,22 @@ function renderStream() {
         if (open) card.append(h("div", { class: "saw", html: md(g.e.text) }));
       }
       el.append(card);
+    } else if (g.kind === "voice") {
+      el.append(h("div", { class: "evmedia" }, h("audio", { src: g.e.meta?.url, controls: true, preload: "metadata" })));
+      const text = g.e.text || "";
+      const long = text.length > 280;
+      el.append(h("div", { class: `evb${long && !open ? " clamp" : ""}` }, text));
+      if (long) el.append(h("div", { class: "evlinks" }, toggle(open ? "Show less" : "Show more")));
+    } else if (g.kind === "video" || g.kind === "file") {
+      const box = h("div", { class: "evmedia" });
+      if (g.kind === "video") box.append(h("video", { src: g.e.meta?.url, controls: true, preload: "metadata", playsinline: true }));
+      else box.append(h("div", { class: "filerow" }, svgIcon('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>', 18),
+        h("a", { href: g.e.meta?.url, target: "_blank", rel: "noopener", class: "grow" }, g.e.meta?.name || "Open file")));
+      el.append(box);
+      if (g.e.text) {
+        el.append(h("div", { class: "evlinks" }, toggle(open ? "Hide" : g.kind === "video" ? "What Huddle saw" : "What Huddle read")));
+        if (open) el.append(h("div", { class: "saw", style: "margin-left:30px", html: md(g.e.text) }));
+      }
     } else if (g.kind === "link") {
       const href = (g.e.text || "").trim();
       el.append(h("div", { class: "evb" }, h("a", { href, target: "_blank", rel: "noopener" }, href)));
@@ -239,19 +255,25 @@ function renderBrain() {
   ch.innerHTML = "";
   (s.changed || []).slice(0, 4).forEach((c) => ch.append(h("span", { class: "chg" }, h("span", { class: "newmark" }, "NEW"), c)));
 
-  const fill = (id, items = [], emptyText, label, withType) => {
+  const lockedSet = new Set((b?.locked || []).map((l) => l.text));
+  const fill = (id, items = [], emptyText, label, withType, lockable) => {
     const box = $(id);
     box.innerHTML = "";
     if (!items.length) box.append(h("p", { class: "empty" }, emptyText));
     for (const it of items) {
       const sel = ui.thread?.item?.text === it.text;
       const refs = h("span", { class: "refs" }, it.owner || it.by || "", ...(it.refs || []).slice(0, 4).map((r) => h("span", { class: "ref" }, `#${r}`)));
+      const locked = lockedSet.has(it.text);
       box.append(h("div", { class: `item${sel ? " sel" : ""}` },
         withType ? h("span", { class: `tb ${it.type || "todo"}` }, it.type || "todo") : null,
-        h("button", { class: "ibody", onclick: () => setThread(it, label) }, h("span", { class: "itext" }, it.text), refs)));
+        h("button", { class: "ibody", onclick: () => setThread(it, label) }, h("span", { class: "itext" }, it.text), refs),
+        lockable ? h("button", { class: `lock${locked ? " on" : ""}`, onclick: () => toggleLock(it, locked),
+          "aria-label": locked ? "Unlock this decision" : "Lock this decision",
+          title: locked ? "Locked by the team. Huddle won't change it. Click to unlock." : "Lock this decision so Huddle never rewrites it" },
+          svgIcon(locked ? '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>' : '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>', 15)) : null));
     }
   };
-  fill("bDecisions", s.decisions, "Nothing decided yet. Huddle adds decisions as you make them.", "Decision");
+  fill("bDecisions", s.decisions, "Nothing decided yet. Huddle adds decisions as you make them.", "Decision", false, true);
   fill("bQuestions", s.questions, "Nothing open yet.", "Open question");
   fill("bIdeas", s.ideas, "Ideas will show up as you talk.", "Idea");
   fill("bNext", s.next_steps, "Next steps appear here, with an owner. Huddle can pick some up itself.", "Next step", true);
@@ -277,6 +299,23 @@ function renderBrain() {
   }
 }
 setInterval(() => renderBrain(), 30000);
+
+async function toggleLock(it, locked) {
+  if (!me) return toast("Join the huddle first");
+  if (!state.brain) return;
+  const before = state.brain.locked || [];
+  state.brain.locked = locked ? before.filter((l) => l.text !== it.text) : [...before, { text: it.text, by: it.by, refs: it.refs || [] }];
+  renderBrain();
+  try {
+    const r = await fn("brain-edit", { room, action: locked ? "unlock" : "lock", text: it.text, by: it.by, refs: it.refs || [] });
+    state.brain.locked = r.locked;
+    toast(locked ? "Unlocked. Huddle may edit this line again." : "Locked. Huddle won't change this decision.");
+  } catch (e) {
+    state.brain.locked = before;
+    toast(`Couldn't ${locked ? "unlock" : "lock"}: ${e.message}`);
+  }
+  renderBrain();
+}
 
 // Things the agents made: single jobs, plus each pipeline's research/prototype outputs (not its review or host steps).
 const doneJobs = () => [...state.jobs.values()].filter((j) => {
@@ -311,75 +350,303 @@ setInterval(() => {
 }, 45000);
 
 // ==========================================================================
-// BOARD — live shared strokes (as before) + everything visual shared in the room
+// BOARD — one endless, shared surface. Cards (notes, sketches, anything shared, agent outputs, the brief)
+// live in board_items with a position; everyone sees moves and edits live.
 // ==========================================================================
-function renderBoardGallery() {
-  const imgs = [...state.events.values()].filter((e) => e.kind === "image" && e.image_url).sort((a, b) => b.id - a.id);
-  $("nBoard").textContent = imgs.length;
-  const g = $("boardGallery");
-  g.innerHTML = "";
-  if (!imgs.length) g.append(h("p", { class: "empty" }, "Sketches, photos and screenshots shared in this huddle show up here."));
-  for (const e of imgs) {
-    g.append(h("div", { class: "bcard" },
-      h("img", { src: e.image_url, alt: "Shared image", loading: "lazy", onclick: () => window.open(e.image_url, "_blank") }),
-      h("small", {}, `${e.author} · ${clock(e.created_at)}`)));
+const boardView = { x: 40, y: 70, z: 0.85 };
+let penColor = "#1E2A22";
+let pen = null; // { strokes: [{ color, pts: [[x,y],…] }] } while sketching
+const BRIEF_KEY = "brief";
+const boardItems = () => [...state.board.values()].filter((b) => !b.removed);
+
+function applyBoardView() {
+  $("blayer").style.transform = `translate(${boardView.x}px, ${boardView.y}px) scale(${boardView.z})`;
+  const g = 22 * boardView.z;
+  $("bsurf").style.backgroundSize = `${g}px ${g}px`;
+  $("bsurf").style.backgroundPosition = `${boardView.x}px ${boardView.y}px`;
+  $("zoomLabel").textContent = `${Math.round(boardView.z * 100)}%`;
+}
+const toBoard = (clientX, clientY) => {
+  const r = $("bsurf").getBoundingClientRect();
+  return [(clientX - r.left - boardView.x) / boardView.z, (clientY - r.top - boardView.y) / boardView.z];
+};
+function viewCenter() {
+  const r = $("bsurf").getBoundingClientRect();
+  const w = r.width || 900, hgt = r.height || 600;
+  return [(w / 2 - boardView.x) / boardView.z, (hgt / 2 - boardView.y) / boardView.z];
+}
+function setZoom(z, cx, cy) {
+  const nz = Math.max(0.25, Math.min(2.5, z));
+  if (cx == null) { const r = $("bsurf").getBoundingClientRect(); cx = r.width / 2; cy = r.height / 2; }
+  boardView.x = cx - ((cx - boardView.x) / boardView.z) * nz;
+  boardView.y = cy - ((cy - boardView.y) / boardView.z) * nz;
+  boardView.z = nz;
+  applyBoardView();
+}
+function fitBoard() {
+  const cards = [...$("blayer").querySelectorAll(".bit")];
+  const r = $("bsurf").getBoundingClientRect();
+  if (!cards.length || !r.width) { boardView.x = 40; boardView.y = 70; boardView.z = 0.85; return applyBoardView(); }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of cards) {
+    const x = parseFloat(c.style.left), y = parseFloat(c.style.top);
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x + c.offsetWidth); y1 = Math.max(y1, y + c.offsetHeight);
+  }
+  const z = Math.max(isMobile() ? 0.45 : 0.25, Math.min(1.2, Math.min((r.width - 80) / (x1 - x0), (r.height - 130) / (y1 - y0))));
+  boardView.z = z;
+  boardView.x = (r.width - (x1 - x0) * z) / 2 - x0 * z;
+  boardView.y = 64 + (r.height - 64 - (y1 - y0) * z) / 2 - y0 * z;
+  applyBoardView();
+}
+$("zoomIn").onclick = () => setZoom(boardView.z + 0.1);
+$("zoomOut").onclick = () => setZoom(boardView.z - 0.1);
+$("zoomFit").onclick = fitBoard;
+
+/** The open spot nearest the middle of what you're looking at, so new cards don't pile up. */
+function freeSpot(w, hgt) {
+  const rects = [...$("blayer").querySelectorAll(".bit")].map((c) => ({
+    x: parseFloat(c.style.left), y: parseFloat(c.style.top), w: c.offsetWidth, h: c.offsetHeight }));
+  const [cx, cy] = viewCenter();
+  const gap = 18, step = 40;
+  const free = (x, y) => rects.every((r) => x + w + gap < r.x || x > r.x + r.w + gap || y + hgt + gap < r.y || y > r.y + r.h + gap);
+  for (let ring = 0; ring < 30; ring++) {
+    for (let i = -ring; i <= ring; i++) {
+      for (const [dx, dy] of [[i, -ring], [i, ring], [-ring, i], [ring, i]]) {
+        const x = Math.round(cx - w / 2 + dx * step), y = Math.round(cy - hgt / 2 + dy * step);
+        if (free(x, y)) return [x, y];
+      }
+    }
+  }
+  return [Math.round(cx - w / 2), Math.round(cy - hgt / 2)];
+}
+
+/** Create a card where you can see it. */
+async function placeOnBoard({ kind, data = {}, w = 260 }) {
+  const [x, y] = freeSpot(w, kind === "note" ? 140 : 220);
+  const row = { room_id: room, kind, data, w, x, y, created_by: me || "someone" };
+  const { data: item, error } = await sb.from("board_items").insert(row).select().single();
+  if (error) { toast(`Couldn't add to the board: ${error.message}`); return null; }
+  state.board.set(item.id, item);
+  renderBoard();
+  return item;
+}
+async function moveItem(item, x, y) {
+  if (item.virtual) {
+    // The brief card exists for everyone; it gets a saved position the first time someone moves it.
+    const { data, error } = await sb.from("board_items").insert({ room_id: room, kind: "brief", x, y, w: item.w, created_by: me }).select().single();
+    if (!error) state.board.set(data.id, data);
+  } else {
+    Object.assign(item, { x, y });
+    await sb.from("board_items").update({ x, y, updated_at: new Date().toISOString() }).eq("id", item.id);
+  }
+  renderBoard();
+}
+async function removeItem(item) {
+  if (item.virtual) return;
+  item.removed = true;
+  renderBoard();
+  await sb.from("board_items").update({ removed: true }).eq("id", item.id);
+}
+const noteTimers = new Map();
+function saveNote(item, text) {
+  item.data = { ...item.data, text };
+  clearTimeout(noteTimers.get(item.id));
+  noteTimers.set(item.id, setTimeout(() => sb.from("board_items").update({ data: item.data, updated_at: new Date().toISOString() }).eq("id", item.id), 500));
+}
+
+function sketchSvg(data) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("class", "sk");
+  s.setAttribute("viewBox", `0 0 ${Math.max(1, data.w || 1)} ${Math.max(1, data.h || 1)}`);
+  s.setAttribute("role", "img");
+  s.setAttribute("aria-label", "Sketch");
+  for (const p of data.paths || []) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", p.pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" "));
+    path.setAttribute("fill", "none"); path.setAttribute("stroke", p.color || "#1E2A22");
+    path.setAttribute("stroke-width", "3"); path.setAttribute("stroke-linecap", "round"); path.setAttribute("stroke-linejoin", "round");
+    s.append(path);
+  }
+  return s;
+}
+/** Render a sketch to a PNG so Huddle can read it into the brief. */
+function sketchToPng(data) {
+  return new Promise((resolve) => {
+    const pad = 20, c = document.createElement("canvas");
+    c.width = Math.max(200, data.w + pad * 2); c.height = Math.max(120, data.h + pad * 2);
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.lineWidth = 4; g.lineCap = "round"; g.lineJoin = "round";
+    for (const p of data.paths || []) {
+      g.strokeStyle = p.color; g.beginPath();
+      p.pts.forEach(([x, y], i) => (i ? g.lineTo(x + pad, y + pad) : g.moveTo(x + pad, y + pad)));
+      g.stroke();
+    }
+    c.toBlob(resolve, "image/png");
+  });
+}
+
+function cardBody(item) {
+  const s = state.brain?.state || {};
+  if (item.kind === "brief") {
+    return [h("span", { class: "kb" }, "The brief · live"),
+      h("b", { style: "font-family:Manrope,sans-serif;font-size:16px;margin-top:4px" }, s.goal || "No goal yet."),
+      s.summary ? h("small", {}, clip(s.summary, 220)) : null,
+      (s.decisions || []).length ? h("small", {}, `Decided: ${(s.decisions || []).slice(0, 3).map((d) => clip(d.text, 60)).join(" · ")}`) : null];
+  }
+  if (item.kind === "note") {
+    const ta = h("textarea", { placeholder: "Type a note…", "aria-label": "Note text" });
+    ta.value = item.data?.text || "";
+    ta.addEventListener("input", () => saveNote(item, ta.value));
+    return [ta, h("span", { class: "who" }, item.created_by)];
+  }
+  if (item.kind === "sketch") {
+    return [sketchSvg(item.data || {}),
+      h("div", { class: "crow" }, h("span", { class: "who grow" }, item.created_by),
+        h("button", { class: "link", onclick: async () => { const png = await sketchToPng(item.data || {}); if (png) shareImage(png, "board sketch"); } }, "Send to the brief"))];
+  }
+  if (item.kind === "output") {
+    const j = state.jobs.get(Number(item.data?.job_id));
+    if (!j) return [h("small", {}, "Agent output")];
+    return [h("span", { class: `kb ${j.kind}` }, j.kind === "prototype" ? "Prototype" : "Research"), h("b", {}, j.title),
+      h("small", {}, clip(plain(j.output_md), 140)), h("button", { class: "link", onclick: () => openViewer(j.id) }, "Open")];
+  }
+  const e = state.events.get(Number(item.data?.event_id));
+  if (!e) return [h("small", {}, "Loading…")];
+  if (e.forgotten) return [h("small", {}, "Erased by its author.")];
+  const title = (e.text || "").match(/^\*\*(.+?)\*\*/)?.[1] || e.meta?.title || e.meta?.name || "";
+  const who = h("span", { class: "who" }, `${e.author} · ${clock(e.created_at)}`);
+  if (e.kind === "image") return [h("img", { src: e.image_url, alt: title || "Shared image", loading: "lazy" }), title ? h("b", { style: "margin-top:6px" }, title) : null, who];
+  if (e.kind === "video") return [h("video", { src: e.meta?.url, controls: true, preload: "metadata" }), title ? h("b", { style: "margin-top:6px" }, title) : null, who];
+  if (e.kind === "voice") return [h("span", { class: "kb" }, "Voice note"), h("audio", { src: e.meta?.url, controls: true, preload: "metadata" }), h("small", {}, clip(e.text || "", 160)), who];
+  if (e.kind === "file") return [h("span", { class: "kb" }, "File"), h("a", { href: e.meta?.url, target: "_blank", rel: "noopener" }, e.meta?.name || "Open file"), title ? h("small", {}, title) : null, who];
+  if (e.kind === "link") return [h("span", { class: "kb" }, "Link"), h("a", { href: e.text, target: "_blank", rel: "noopener" }, clip(e.text || "", 80)), who];
+  return [h("small", {}, clip(plain(e.text), 200)), who];
+}
+
+function renderBoard() {
+  const layer = $("blayer");
+  const focused = document.activeElement?.closest?.(".bit")?.dataset.id;
+  [...layer.querySelectorAll(".bit")].forEach((n) => { if (n.dataset.id !== focused) n.remove(); });
+  const items = boardItems();
+  if (!items.some((b) => b.kind === "brief")) items.unshift({ id: BRIEF_KEY, virtual: true, kind: "brief", x: 40, y: 40, w: 380 });
+  for (const item of items) {
+    if (String(item.id) === focused) continue; // don't yank the note someone is typing in
+    const card = h("div", { class: `bit ${item.kind}`, "data-id": String(item.id), style: `left:${item.x}px;top:${item.y}px;width:${item.w}px` },
+      item.virtual ? null : h("button", { class: "x", "aria-label": "Remove from the board", title: "Remove from the board", onclick: () => removeItem(item) }, "×"),
+      ...cardBody(item));
+    card.addEventListener("pointerdown", (ev) => startCardDrag(ev, card, item));
+    layer.append(card);
   }
 }
 
-const canvas = $("board");
-const ctx2d = canvas.getContext("2d");
-let penColor = "#1E2A22";
-let boardDirty = false;
-function clearCanvas() {
-  ctx2d.fillStyle = "#ffffff";
-  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+// Dragging cards, panning the surface, drawing sketches
+let drag = null;
+function startCardDrag(ev, card, item) {
+  if (pen || ev.button > 0) return;
+  if (ev.target.closest("textarea, button, a, audio, video, input")) return;
+  ev.stopPropagation();
+  card.setPointerCapture(ev.pointerId);
+  card.classList.add("dragging");
+  drag = { card, item, sx: ev.clientX, sy: ev.clientY, ox: item.x, oy: item.y, moved: false };
 }
-clearCanvas();
-function drawStroke(pts, color) {
-  if (pts.length < 2) return;
-  ctx2d.strokeStyle = color;
-  ctx2d.lineWidth = 4;
-  ctx2d.lineCap = "round";
-  ctx2d.lineJoin = "round";
-  ctx2d.beginPath();
-  ctx2d.moveTo(pts[0][0], pts[0][1]);
-  for (const [x, y] of pts.slice(1)) ctx2d.lineTo(x, y);
-  ctx2d.stroke();
-  boardDirty = true;
+$("bsurf").addEventListener("pointerdown", (ev) => {
+  if (ev.button > 0) return;
+  $("addMenu").hidden = true;
+  if (pen) {
+    $("bsurf").setPointerCapture(ev.pointerId);
+    pen.current = { color: penColor, pts: [toBoard(ev.clientX, ev.clientY)] };
+    pen.strokes.push(pen.current);
+    return drawInk();
+  }
+  $("bsurf").setPointerCapture(ev.pointerId);
+  $("bsurf").classList.add("panning");
+  drag = { pan: true, sx: ev.clientX, sy: ev.clientY, ox: boardView.x, oy: boardView.y };
+});
+window.addEventListener("pointermove", (ev) => {
+  if (pen?.current) { pen.current.pts.push(toBoard(ev.clientX, ev.clientY)); return drawInk(); }
+  if (!drag) return;
+  const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  if (drag.pan) { boardView.x = drag.ox + dx; boardView.y = drag.oy + dy; applyBoardView(); }
+  else { drag.card.style.left = `${drag.ox + dx / boardView.z}px`; drag.card.style.top = `${drag.oy + dy / boardView.z}px`; }
+});
+window.addEventListener("pointerup", (ev) => {
+  if (pen?.current) { pen.current = null; return; }
+  if (!drag) return;
+  const d = drag; drag = null;
+  $("bsurf").classList.remove("panning");
+  if (d.pan || !d.moved) { d.card?.classList.remove("dragging"); return; }
+  d.card.classList.remove("dragging");
+  moveItem(d.item, Math.round(d.ox + (ev.clientX - d.sx) / boardView.z), Math.round(d.oy + (ev.clientY - d.sy) / boardView.z));
+});
+$("bsurf").addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  if (ev.ctrlKey || ev.metaKey) {
+    const r = $("bsurf").getBoundingClientRect();
+    setZoom(boardView.z * (ev.deltaY > 0 ? 0.92 : 1.08), ev.clientX - r.left, ev.clientY - r.top);
+  } else { boardView.x -= ev.deltaX; boardView.y -= ev.deltaY; applyBoardView(); }
+}, { passive: false });
+
+function drawInk() {
+  const svg = $("ink");
+  svg.innerHTML = "";
+  for (const s of pen?.strokes || []) {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", s.pts.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(" "));
+    p.setAttribute("fill", "none"); p.setAttribute("stroke", s.color); p.setAttribute("stroke-width", "3");
+    p.setAttribute("stroke-linecap", "round"); p.setAttribute("stroke-linejoin", "round");
+    svg.append(p);
+  }
 }
-let cur = null;
-const toCanvas = (ev) => {
-  const r = canvas.getBoundingClientRect();
-  return [((ev.clientX - r.left) / r.width) * canvas.width, ((ev.clientY - r.top) / r.height) * canvas.height];
-};
-canvas.addEventListener("pointerdown", (ev) => { canvas.setPointerCapture(ev.pointerId); cur = [toCanvas(ev)]; });
-canvas.addEventListener("pointermove", (ev) => {
-  if (!cur) return;
-  const p = toCanvas(ev);
-  drawStroke([cur[cur.length - 1], p], penColor);
-  cur.push(p);
-});
-canvas.addEventListener("pointerup", () => {
-  if (cur?.length > 1) roomChannel?.send({ type: "broadcast", event: "stroke", payload: { pts: cur, color: penColor } });
-  cur = null;
-});
-document.querySelectorAll(".swatch").forEach((b) => {
-  b.onclick = () => {
-    document.querySelectorAll(".swatch").forEach((x) => x.classList.remove("on"));
-    b.classList.add("on");
-    penColor = b.dataset.color;
-  };
-});
-$("clearBoard").onclick = () => {
-  clearCanvas();
-  boardDirty = false;
-  roomChannel?.send({ type: "broadcast", event: "clear", payload: {} });
-};
-$("shareBoard").onclick = () => {
-  if (!boardDirty) return toast("Draw something first");
-  canvas.toBlob((blob) => blob && shareImage(blob, "whiteboard sketch"), "image/png");
-  toast("Sent. Huddle will read it into the brief.");
-};
+function startPen() {
+  if (!me) return toast("Join the huddle first");
+  pen = { strokes: [], current: null };
+  $("bsurf").classList.add("pen");
+  $("penBar").hidden = false; $("addBtn").hidden = true; $("addMenu").hidden = true;
+  toast("Draw anywhere on the board. Press Done when you're finished.");
+}
+async function endPen(save) {
+  const strokes = (pen?.strokes || []).filter((s) => s.pts.length > 1);
+  pen = null;
+  $("ink").innerHTML = "";
+  $("bsurf").classList.remove("pen");
+  $("penBar").hidden = true; $("addBtn").hidden = false;
+  if (!save || !strokes.length) return;
+  const all = strokes.flatMap((s) => s.pts);
+  const x0 = Math.min(...all.map((p) => p[0])), y0 = Math.min(...all.map((p) => p[1]));
+  const x1 = Math.max(...all.map((p) => p[0])), y1 = Math.max(...all.map((p) => p[1]));
+  const data = { w: Math.round(x1 - x0), h: Math.round(y1 - y0), paths: strokes.map((s) => ({ color: s.color, pts: s.pts.map(([x, y]) => [Math.round((x - x0) * 10) / 10, Math.round((y - y0) * 10) / 10]) })) };
+  const pad = 10;
+  const { data: item, error } = await sb.from("board_items")
+    .insert({ room_id: room, kind: "sketch", x: Math.round(x0 - pad), y: Math.round(y0 - pad), w: Math.max(120, data.w + pad * 2), data, created_by: me })
+    .select().single();
+  if (error) return toast(`Couldn't save the sketch: ${error.message}`);
+  state.board.set(item.id, item);
+  renderBoard();
+  toast("Sketch saved. Use “Send to the brief” on it when you want Huddle to read it.");
+}
+$("penDone").onclick = () => endPen(true);
+$("penCancel").onclick = () => endPen(false);
+document.querySelectorAll("#penBar .swatch").forEach((b) => (b.onclick = () => {
+  document.querySelectorAll("#penBar .swatch").forEach((x) => x.classList.remove("on"));
+  b.classList.add("on");
+  penColor = b.dataset.color;
+}));
+
+$("addBtn").onclick = (ev) => { ev.stopPropagation(); $("addMenu").hidden = !$("addMenu").hidden; $("addBtn").setAttribute("aria-expanded", String(!$("addMenu").hidden)); };
+document.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => {
+  $("addMenu").hidden = true;
+  const k = b.dataset.add;
+  if (!me) return toast("Join the huddle first");
+  if (k === "note") return placeOnBoard({ kind: "note", data: { text: "" }, w: 220 }).then((it) => it && $("blayer").querySelector(`.bit[data-id="${it.id}"] textarea`)?.focus());
+  if (k === "sketch") return startPen();
+  if (k === "voice") return startVoiceNote();
+  const picker = document.querySelector(`.comp input.pick[data-kind="${k}"]`) || document.querySelector(`input.pick[data-kind="${k}"]`);
+  picker?.click();
+}));
+applyBoardView();
 
 // ==========================================================================
 // WORK — mode, ask, needs the room, suggestions, running, done
@@ -618,6 +885,13 @@ function openViewer(id) {
   $("viewer").hidden = false;
 }
 $("vOpen").onclick = () => blobUrl && window.open(blobUrl, "_blank");
+$("vPin").onclick = async () => {
+  if (!viewing) return;
+  if (boardItems().some((b) => b.kind === "output" && Number(b.data?.job_id) === viewing)) { toast("It's already on the board."); }
+  else { await placeOnBoard({ kind: "output", data: { job_id: viewing }, w: 280 }); toast("Added to the board."); }
+  $("viewer").hidden = true;
+  setView("board");
+};
 $("vClose").onclick = () => ($("viewer").hidden = true);
 async function revise() {
   const text = $("vFeedbackInput").value.trim();
@@ -641,7 +915,8 @@ $("vRevise").onclick = revise;
 $("vFeedbackInput").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); revise(); } });
 
 // ==========================================================================
-// SHARING INTO THE ROOM: notes, links, images (desktop composer + phone capture bar)
+// SHARING INTO THE ROOM: notes, links, images, video, voice notes, files.
+// Everything shared lands in the stream, and media also lands on the board.
 // ==========================================================================
 async function postNote(text) {
   if (!me) return toast("Join the huddle first");
@@ -664,51 +939,72 @@ $("mNote").addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") { ev.preventDefault(); sendFrom($("mNote")); }
 });
 
-async function shareImage(blob, caption = "") {
+const MAX_UPLOAD = 50 * 1024 * 1024;
+const safeName = (s) => (s || "upload").replace(/[^\w.\-]+/g, "_").slice(-80);
+async function upload(blob, folder, name) {
+  if (blob.size > MAX_UPLOAD) throw new Error("that file is over 50 MB");
+  const path = `${room}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safeName(name)}`;
+  const up = await sb.storage.from("board").upload(path, blob, { contentType: blob.type || "application/octet-stream" });
+  if (up.error) throw up.error;
+  return sb.storage.from("board").getPublicUrl(path).data.publicUrl;
+}
+function kindOf(file) {
+  const t = file.type || "";
+  if (t.startsWith("image/")) return "image";
+  if (t.startsWith("video/")) return "video";
+  if (t.startsWith("audio/")) return "voice";
+  return "file";
+}
+const SHARING = { image: "image", video: "video", voice: "voice note", file: "file" };
+
+/** Share any file. kind: image | video | voice | file. Lands in the stream and on the board. */
+async function shareFile(file, kind = kindOf(file), caption = "") {
   if (!me) return toast("Join the huddle first");
-  $("sendStatus").textContent = "Reading image…";
-  toast("Sharing your image. Huddle is reading it…");
+  const name = file.name || (kind === "voice" ? "voice-note.wav" : kind === "image" ? "image.png" : "upload");
+  $("sendStatus").textContent = `Sharing ${SHARING[kind]}…`;
+  toast(`Sharing your ${SHARING[kind]}. Huddle is ${kind === "voice" ? "listening to" : kind === "video" ? "watching" : "reading"} it…`, 4000);
   try {
-    const ext = (blob.type.split("/")[1] || "png").replace("jpeg", "jpg");
-    const path = `${room}/${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-    const up = await sb.storage.from("board").upload(path, blob, { contentType: blob.type || "image/png" });
-    if (up.error) throw up.error;
-    const { data } = sb.storage.from("board").getPublicUrl(path);
-    await fn("see", { room, author: me, image_url: data.publicUrl, caption });
+    const url = await upload(file, kind === "image" ? "images" : `${kind}s`, name);
+    const r = kind === "image"
+      ? await fn("see", { room, author: me, image_url: url, caption })
+      : await fn("read-media", { room, author: me, kind, url, name, mime: file.type || null, size: file.size, caption });
+    if (r?.event?.id) placeOnBoard({ kind: "event", data: { event_id: r.event.id }, w: kind === "file" ? 260 : 300 });
   } catch (e) {
-    toast(`Image failed: ${e.message}`);
+    toast(`Couldn't share that ${SHARING[kind]}: ${e.message}`);
   } finally {
     $("sendStatus").textContent = "";
   }
 }
-$("fileInput").onchange = (ev) => {
-  const f = ev.target.files?.[0];
-  if (f) shareImage(f, $("noteInput").value.trim());
-  ev.target.value = "";
-};
-document.querySelectorAll(".shareFile").forEach((inp) => (inp.onchange = (ev) => {
-  const f = ev.target.files?.[0];
-  if (f) shareImage(f, $("mNote").value.trim());
+const shareImage = (blob, caption = "") => shareFile(blob, "image", caption);
+
+document.querySelectorAll("input.pick").forEach((inp) => (inp.onchange = (ev) => {
+  const files = [...(ev.target.files || [])];
+  const caption = (isMobile() ? $("mNote") : $("noteInput")).value.trim();
+  files.forEach((f) => shareFile(f, inp.dataset.kind === "file" ? kindOf(f) : inp.dataset.kind, caption));
   ev.target.value = "";
   $("shareSheet").hidden = true;
+  $("addMenu").hidden = true;
 }));
 document.querySelectorAll("[data-share]").forEach((b) => (b.onclick = () => {
   $("shareSheet").hidden = true;
   const kind = b.dataset.share;
-  if (kind === "sketch") return setTab("board");
+  if (kind === "sketch") { setTab("board"); return startPen(); }
+  if (kind === "voice") return startVoiceNote();
   $("mNote").placeholder = kind === "link" ? "Paste a link…" : "Type a note…";
   $("mNote").focus();
 }));
 $("plusBtn").onclick = () => ($("shareSheet").hidden = false);
-$("sketchBtn").onclick = () => setView("board");
+$("sketchBtn").onclick = () => { setView("board"); startPen(); };
+$("voiceNoteBtn").onclick = () => startVoiceNote();
 
 document.addEventListener("paste", (ev) => {
-  const item = [...(ev.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
-  if (!item) return;
+  if (ev.target?.closest?.(".bit")) return;
+  const files = [...(ev.clipboardData?.files || [])];
+  if (!files.length) return;
   ev.preventDefault();
-  shareImage(item.getAsFile(), $("noteInput").value.trim());
+  files.forEach((f) => shareFile(f, kindOf(f), $("noteInput").value.trim()));
 });
-// Drop images anywhere on the room
+// Drop anything anywhere on the room
 let dragDepth = 0;
 window.addEventListener("dragenter", (ev) => { if ([...(ev.dataTransfer?.types || [])].includes("Files")) { dragDepth++; document.body.classList.add("dragging"); } });
 window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
@@ -717,11 +1013,50 @@ window.addEventListener("drop", (ev) => {
   ev.preventDefault();
   dragDepth = 0;
   document.body.classList.remove("dragging");
-  const files = [...(ev.dataTransfer?.files || [])];
-  const imgs = files.filter((f) => f.type.startsWith("image/"));
-  imgs.forEach((f) => shareImage(f));
-  if (files.length > imgs.length) toast("For now Huddle can read images. Other file types are coming.");
+  [...(ev.dataTransfer?.files || [])].forEach((f) => shareFile(f));
 });
+
+// ---------- voice notes: record, then Huddle transcribes and keeps the audio ----------
+const rec = { on: false, stream: null, ctx: null, proc: null, frames: [], start: 0, timer: null };
+const MAX_NOTE_MS = 3 * 60 * 1000;
+async function startVoiceNote() {
+  if (!me) return toast("Join the huddle first");
+  if (rec.on) return;
+  try {
+    rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+  } catch (e) { return toast(`Mic unavailable: ${e.message}`); }
+  try { rec.ctx = new AudioContext({ sampleRate: 16000 }); } catch { rec.ctx = new AudioContext(); }
+  const src = rec.ctx.createMediaStreamSource(rec.stream);
+  rec.proc = rec.ctx.createScriptProcessor(4096, 1, 1);
+  rec.proc.onaudioprocess = (e) => { rec.frames.push(new Float32Array(e.inputBuffer.getChannelData(0))); e.outputBuffer.getChannelData(0).fill(0); };
+  src.connect(rec.proc); rec.proc.connect(rec.ctx.destination);
+  rec.on = true; rec.frames = []; rec.start = Date.now();
+  $("recBar").hidden = false;
+  const tick = () => {
+    const ms = Date.now() - rec.start;
+    $("recTime").textContent = `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+    if (ms >= MAX_NOTE_MS) stopVoiceNote(true);
+  };
+  tick();
+  rec.timer = setInterval(tick, 500);
+}
+function stopVoiceNote(send) {
+  if (!rec.on) return;
+  clearInterval(rec.timer);
+  rec.proc?.disconnect();
+  rec.stream?.getTracks().forEach((t) => t.stop());
+  const rate = rec.ctx?.sampleRate || 16000;
+  rec.ctx?.close();
+  rec.on = false;
+  $("recBar").hidden = true;
+  const frames = rec.frames; rec.frames = [];
+  if (!send) return toast("Voice note discarded.");
+  if (frames.length * 4096 / rate < 0.8) return toast("That was too short to share.");
+  const blob = new Blob([encodeWav(frames, rate)], { type: "audio/wav" });
+  shareFile(new File([blob], `voice-note-${Date.now()}.wav`, { type: "audio/wav" }), "voice");
+}
+$("recStop").onclick = () => stopVoiceNote(true);
+$("recCancel").onclick = () => stopVoiceNote(false);
 
 // ==========================================================================
 // LAYOUT: Brief/Board tabs, Focus, phone tabs
@@ -733,6 +1068,8 @@ function setView(view) {
   $("boardView").hidden = view !== "board";
   $("synthBtn").hidden = view !== "brief";
   $("centerTitle").textContent = view === "board" ? "Board" : "Brief";
+  $("brainMeta").hidden = view === "board";
+  if (view === "board" && !ui.boardFitted) { ui.boardFitted = true; requestAnimationFrame(fitBoard); }
   if (isMobile() && ui.tab !== view) setTab(view);
 }
 document.querySelectorAll("#centerTabs button").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
@@ -792,10 +1129,8 @@ $("newRoomBtn").onclick = () => { $("roomMenu").hidden = true; $("newRoom").hidd
 $("createRoom").onclick = async () => {
   const id = Math.random().toString(36).slice(2, 8);
   const name = $("newName").value.trim().slice(0, 60) || "New huddle";
-  const goal = $("newGoal").value.trim();
   myRooms.unshift({ id, name });
   store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
-  if (goal) store.set(`huddle:goal:${id}`, goal);
   const link = `${location.origin}${location.pathname}?room=${id}`;
   try { await navigator.clipboard.writeText(link); } catch {}
   location.href = link;
@@ -808,14 +1143,19 @@ function openUpgrade() {
   $("upgrade").hidden = false;
 }
 $("visSwitch").onclick = openUpgrade;
+$("newVis").onclick = openUpgrade;
 $("visSwitch2").onclick = openUpgrade;
 $("upYes").onclick = () => { $("upAsk").hidden = true; $("upEmail").hidden = false; $("upEmailInput").focus(); };
 function notifyMe() {
   const em = $("upEmailInput").value.trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast("Please enter a valid email.");
-  // TODO: store in a waitlist table once one exists. Nothing is saved yet.
-  $("upDoneEmail").textContent = em;
-  $("upEmail").hidden = true; $("upDone").hidden = false;
+  $("upNotify").disabled = true;
+  sb.from("waitlist").insert({ email: em, room_id: room }).then(({ error }) => {
+    $("upNotify").disabled = false;
+    if (error) return toast(`Couldn't save your email: ${error.message}`);
+    $("upDoneEmail").textContent = em;
+    $("upEmail").hidden = true; $("upDone").hidden = false;
+  });
 }
 $("upNotify").onclick = notifyMe;
 $("upEmailInput").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); notifyMe(); } });
@@ -858,7 +1198,7 @@ window.addEventListener("keydown", (ev) => {
 // MICROPHONE: on-device voice detection, Gemini transcription (unchanged logic)
 // ==========================================================================
 const mic = { on: false, stream: null, ctx: null, proc: null, frames: [], pre: [], speaking: false,
-  silenceMs: 0, speechMs: 0, noise: 0.008, pttDown: false };
+  silenceMs: 0, speechMs: 0, noise: 0.008 };
 
 function encodeWav(chunks, rate) {
   const len = chunks.reduce((n, c) => n + c.length, 0);
@@ -887,8 +1227,8 @@ let inflight = 0;
 function setMicLabel() {
   $("micLabel").textContent = !mic.on ? "Talk"
     : inflight ? "Transcribing…"
-    : $("micMode").value === "ptt" ? (mic.pttDown ? "Listening…" : "Hold Space")
     : mic.speaking ? "Listening…" : "Mic on";
+  $("forgetBtn").hidden = !(mic.on || Date.now() - lastSpokeAt < 120_000);
   for (const b of [$("micBtn"), $("mMicBtn")]) {
     b.classList.toggle("live", mic.on);
     b.setAttribute("aria-pressed", String(mic.on));
@@ -906,6 +1246,7 @@ async function flush(force = false) {
   setMicLabel();
   try {
     await fn("transcribe", { room, author: me, audio: b64(wav) });
+    lastSpokeAt = Date.now();
   } catch (e) {
     toast(`Transcription failed: ${e.message}`);
   } finally {
@@ -922,10 +1263,6 @@ function onAudio(data) {
   $("meterFill").style.width = `${Math.min(100, rms * 900)}%`;
   const dur = (frame.length / mic.ctx.sampleRate) * 1000;
 
-  if ($("micMode").value === "ptt") {
-    if (mic.pttDown) { mic.frames.push(frame); mic.speechMs += dur; }
-    return;
-  }
   const thr = Math.max(0.012, mic.noise * 3);
   if (rms > thr) {
     if (!mic.speaking) { mic.frames.push(...mic.pre); mic.pre = []; }
@@ -978,16 +1315,19 @@ const toggleMic = async () => {
 };
 $("micBtn").onclick = toggleMic;
 $("mMicBtn").onclick = toggleMic;
-$("micMode").onchange = () => { mic.frames = []; mic.speaking = false; setMicLabel(); };
-const typing = () => ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
-window.addEventListener("keydown", (ev) => {
-  if (ev.code === "Space" && mic.on && $("micMode").value === "ptt" && !typing() && !ev.repeat) {
-    ev.preventDefault(); mic.pttDown = true; setMicLabel();
-  }
-});
-window.addEventListener("keyup", (ev) => {
-  if (ev.code === "Space" && mic.pttDown) { mic.pttDown = false; flush(true); }
-});
+
+// "Forget last 2 min": erase what you said (live speech and voice notes) in the last two minutes.
+let lastSpokeAt = 0;
+$("forgetBtn").onclick = async () => {
+  try {
+    const r = await fn("forget", { room, author: me, minutes: 2 });
+    const n = r?.forgotten?.length || 0;
+    for (const id of r?.forgotten || []) { const e = state.events.get(id); if (e) Object.assign(e, { forgotten: true, text: null }); }
+    renderStream(); renderBoard();
+    toast(n ? `Erased ${n} ${n === 1 ? "thing" : "things"} you said in the last 2 minutes.` : "Nothing to erase from the last 2 minutes.");
+  } catch (e) { toast(`Couldn't erase: ${e.message}`); }
+};
+setInterval(setMicLabel, 15000);
 
 // ==========================================================================
 // PRESENCE
@@ -1066,6 +1406,14 @@ async function loadInitial() {
     sb.from("pipelines").select("*").eq("room_id", room).order("id"),
     sb.from("rooms").select("*").eq("id", room).maybeSingle(),
   ]);
+  const board = await sb.from("board_items").select("*").eq("room_id", room).eq("removed", false).order("id");
+  (board.data || []).forEach((b) => state.board.set(b.id, b));
+  // Board cards can point at older events than the 200 we load; fetch those too.
+  const missing = (board.data || []).filter((b) => b.kind === "event").map((b) => Number(b.data?.event_id)).filter((id) => id && !(ev.data || []).some((e) => e.id === id));
+  if (missing.length) {
+    const more = await sb.from("events").select("*").in("id", missing);
+    (more.data || []).forEach((e) => state.events.set(e.id, e));
+  }
   if (ev.error) toast(`Can't reach the server: ${ev.error.message}`, 6000);
   (ev.data || []).forEach((e) => state.events.set(e.id, e));
   (jobs.data || []).forEach((j) => state.jobs.set(j.id, j));
@@ -1081,8 +1429,10 @@ async function loadInitial() {
 
 function subscribe() {
   sb.channel(`db-${room}`)
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "events", filter: `room_id=eq.${room}` },
-      ({ new: e }) => { state.events.set(e.id, e); renderStream(); renderBoardGallery(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "events", filter: `room_id=eq.${room}` },
+      ({ new: e }) => { if (!e?.id) return; state.events.set(e.id, e); renderStream(); renderBoard(); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "board_items", filter: `room_id=eq.${room}` },
+      ({ new: b }) => { if (!b?.id) return; state.board.set(b.id, b); renderBoard(); })
     .on("postgres_changes", { event: "*", schema: "public", table: "jobs", filter: `room_id=eq.${room}` },
       ({ new: j }) => {
         const prev = state.jobs.get(j.id);

@@ -21,3 +21,12 @@ verify_jwt = false
 
 [functions.intake]
 verify_jwt = false
+
+[functions.read-media]
+verify_jwt = false
+
+[functions.forget]
+verify_jwt = false
+
+[functions.brain-edit]
+verify_jwt = false

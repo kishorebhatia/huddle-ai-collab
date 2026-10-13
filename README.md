@@ -29,7 +29,7 @@ git clone <this repo> && cd huddle
 cp .env.example .env                    # SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY (Project Settings → API)
 cp supabase/.env.example supabase/.env  # GEMINI_API_KEY
 
-# Backend: tables + realtime + storage bucket, the Gemini secret, and the five Edge Functions
+# Backend: tables + realtime + storage bucket, the Gemini secret, and the Edge Functions
 npx supabase login
 npx supabase link --project-ref <your-project-ref>
 npx supabase db push                     # edit YOUR-PROJECT-REF in the sweep_cron migration first
@@ -85,13 +85,31 @@ publish gate ≈ 80 s; publishing after approval ≈ 3 s.
 
 ## Using it
 
-- **Mic**: "Auto" sends a clip whenever you stop talking (~1 s pause). In a noisy room use
-  **Push-to-talk** (hold Space) or headsets. The transcribe function drops near-duplicate lines picked
-  up by other laptops within 25 s.
-- **Images**: paste a screenshot anywhere, attach a photo (phones open the camera), or draw on
-  **Board** — strokes show live for everyone — then "Send to brain".
-- **Brain**: one browser re-synthesizes every 45 s when there is something new; "Synthesize now"
-  forces it. `#123` chips jump to the source line in the feed.
+- **The room has three zones**:
+  - **Stream** (left): what people share. One person's speech clips merge into one paragraph.
+  - **Brief / Board** (middle).
+  - **Work** (right): the agents' jobs.
+
+  On a phone, these become tabs, with a capture bar that stays at the bottom.
+- **Mic**: **Talk** sends a clip each time you stop talking (about a 1-second pause). The transcribe
+  function drops near-duplicate lines that other laptops in the same room picked up within 25 seconds.
+  **Forget last 2 min** erases what you said (live speech and voice notes) in the last two minutes.
+- **Sharing**: drop, paste or attach anything:
+  - images (the `see` function);
+  - video, voice notes, and PDF or text files (the `read-media` function; up to 18 MB is read, up to
+    50 MB can be shared);
+  - links and notes.
+
+  Each one lands in the stream and on the board.
+- **Board**: one endless, shared surface (`board_items`):
+  - Drag cards around, drag the background to move, zoom with Ctrl or Cmd plus the scroll wheel, or press **Fit**.
+  - **Add anything** adds notes, sketches and media. **Send to the brief** has Huddle read a sketch.
+  - **Put on the board** in the output viewer pins research or prototypes.
+- **Brief**: one browser updates the brief every 45 seconds when there's something new; **Update now**
+  forces it. Click a line to light up its sources in the stream. **Lock** a decision (the `brain-edit`
+  function) and later updates keep it word for word.
+- **Private huddles** aren't built yet. The switch collects interested emails in `waitlist`, which
+  browsers can add to but never read.
 - **Agent work**: proposed jobs are dashed — Run or Dismiss. Ask directly in the input. Research uses
   Google Search grounding with sources; prototypes are single-file HTML shown in a sandboxed frame.
   Open → give feedback → Revise creates v2 from v1.
