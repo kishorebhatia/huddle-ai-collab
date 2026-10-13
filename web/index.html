@@ -6,180 +6,307 @@
   <title>Huddle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="./style.css" />
-  <link rel="stylesheet" href="./skin.css" />
 </head>
 <body>
-  <header class="topbar">
+<div class="app">
+
+  <!-- ===== Top bar ===== -->
+  <header class="top">
     <div class="brand">
-      <span class="dot"></span>
-      <strong>Huddle</strong>
-      <span class="room" id="roomName"></span>
+      <span class="mark" aria-hidden="true">h</span>
+      <span class="word donly">huddle</span>
+      <span class="slash donly">/</span>
+      <button class="roombtn" id="roomBtn" aria-expanded="false" aria-label="Switch huddle or start a new one">
+        <span class="rname" id="roomName"></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <span class="code donly" id="roomCode"></span>
     </div>
-    <div class="peers" id="peers"></div>
-    <div class="actions">
-      <div class="autonomy" title="How much agents do on their own">
-        <select id="roomMode">
-          <option value="suggest">Suggest only</option>
-          <option value="auto" selected>Auto with gates</option>
-          <option value="full">Full auto</option>
-        </select>
-        <button class="btn ghost danger" id="stopAll">Stop all</button>
-      </div>
-      <button class="btn ghost" id="connectBtn" title="Let your own Claude/Gemini read and post">Connect your AI</button>
-      <button class="btn ghost" id="shareBtn">Copy invite link</button>
-      <div class="mic-wrap">
-        <select id="micMode" title="Mic mode">
-          <option value="auto">Auto (voice detect)</option>
-          <option value="ptt">Push-to-talk (hold Space)</option>
-        </select>
-        <button class="btn mic" id="micBtn" aria-pressed="false">
-          <span class="mic-icon">●</span><span id="micLabel">Mic off</span>
-          <span class="meter"><span id="meterFill"></span></span>
-        </button>
-      </div>
+    <button class="vswitch donly" id="visSwitch" role="switch" aria-checked="false" aria-label="Private huddle" title="Public: anyone with the link can join">
+      <span class="vside vpub">Public</span><span class="vtrack" aria-hidden="true"><span class="vknob"></span></span><span class="vside vpriv">Private</span>
+    </button>
+    <div class="people" id="peers" aria-label="Who is in the room"></div>
+    <a class="needpill donly" id="needPill" href="#needs" hidden></a>
+    <button class="btn dk sm donly" id="focusBtn" aria-pressed="false" title="Hide the stream and work to focus on the brief">Focus</button>
+    <button class="btn dk sm" id="shareBtn" aria-label="Copy invite link">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="donly">Invite</span>
+    </button>
+    <button class="btn ai sm donly" id="connectBtn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/></svg>Connect your AI
+    </button>
+    <div class="mic-wrap donly">
+      <select id="micMode" title="Mic mode" aria-label="Mic mode">
+        <option value="auto">Auto</option>
+        <option value="ptt">Hold Space</option>
+      </select>
+      <button class="btn talk" id="micBtn" aria-pressed="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        <span id="micLabel">Talk</span>
+        <span class="meter" aria-hidden="true"><span id="meterFill"></span></span>
+      </button>
     </div>
   </header>
 
-  <nav class="tabs-mobile" id="mobileTabs">
-    <button data-col="feed" class="on">Live</button>
-    <button data-col="center">Brain</button>
-    <button data-col="work">Work</button>
-  </nav>
+  <!-- ===== Three zones ===== -->
+  <main class="cols" id="cols">
 
-  <main class="grid">
-    <!-- LIVE FEED -->
-    <section class="col" id="feed">
-      <div class="col-head">
-        <h2>Live</h2>
-        <span class="muted" id="feedCount"></span>
-      </div>
-      <ol class="events" id="events"></ol>
-      <form class="composer" id="composer">
-        <textarea id="noteInput" rows="2" placeholder="Type a note, paste a link or an image… (Enter to send)"></textarea>
-        <div class="composer-row">
-          <label class="btn ghost small" title="Add a photo or screenshot">
-            Image<input type="file" id="fileInput" accept="image/*" hidden />
-          </label>
-          <span class="muted small" id="sendStatus"></span>
-          <button class="btn primary small" type="submit">Send</button>
+    <!-- STREAM -->
+    <section class="col c-stream" id="stream" aria-label="Stream">
+      <button class="rail" id="streamRail" hidden aria-label="Show the stream"><span class="cnt" id="streamRailCount">0</span><span class="vl">Stream</span></button>
+      <div class="colbody" id="streamBody">
+        <div class="colhead">
+          <h2>Stream</h2>
+          <div class="seg" role="group" aria-label="Filter the stream" id="filters" style="margin-left:auto">
+            <button class="on" data-filter="all">All</button>
+            <button data-filter="voice">Voice</button>
+            <button data-filter="text">Text</button>
+            <button data-filter="media">Media</button>
+          </div>
         </div>
-      </form>
+        <div class="scroll" id="events"></div>
+        <div class="comp donly">
+          <label for="noteInput" class="sr">Share something</label>
+          <textarea id="noteInput" rows="2" placeholder="Type, paste or drop anything: a thought, a link, an image…"></textarea>
+          <div class="crow">
+            <label class="ico" title="Add a photo or screenshot" aria-label="Add a photo or screenshot">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>
+              <input type="file" id="fileInput" accept="image/*" hidden />
+            </label>
+            <button class="ico" id="sketchBtn" title="Sketch on the board" aria-label="Sketch on the board">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>
+            </button>
+            <span class="muted small" id="sendStatus"></span>
+            <span class="grow"></span>
+            <button class="btn pri sm" id="sendBtn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Send
+            </button>
+          </div>
+          <p class="dropnote">Paste or drop images anywhere. Talk any time your mic is on.</p>
+        </div>
+      </div>
     </section>
 
-    <!-- BRAIN + BOARD -->
-    <section class="col" id="center">
-      <div class="col-head">
-        <div class="seg">
-          <button class="on" data-view="brainView">Brain</button>
-          <button data-view="boardView">Board</button>
+    <!-- BRIEF + BOARD -->
+    <section class="col c-brief" id="center" aria-label="Brief and Board">
+      <div class="colhead">
+        <div class="seg donly" role="tablist" aria-label="Brief or Board" id="centerTabs">
+          <button class="on" data-view="brief" role="tab">Brief</button>
+          <button data-view="board" role="tab">Board</button>
         </div>
-        <span class="muted small" id="brainMeta"></span>
-        <button class="btn ghost small" id="synthBtn">Synthesize now</button>
+        <h2 class="monly" id="centerTitle">Brief</h2>
+        <span class="muted small" id="brainMeta" style="margin-left:auto"></span>
+        <button class="btn sm" id="synthBtn">Update now</button>
       </div>
 
-      <div class="view" id="brainView">
-        <div class="empty" id="brainEmpty">
-          Talk, type or sketch. Every minute Huddle folds what's new into this brief:
-          the goal, decisions, open questions, ideas and next steps — and proposes agent jobs.
+      <div class="scroll brief" id="briefView">
+        <div class="tbar" id="threadBar" hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12h6M14 12h6M10 12a2 2 0 1 0 4 0 2 2 0 1 0-4 0"/></svg>
+          <span class="grow" id="threadLabel"></span>
+          <button class="link" id="clearThread">Clear</button>
         </div>
-        <div id="brain" hidden>
-          <p class="goal" id="bGoal"></p>
-          <p class="summary" id="bSummary"></p>
-          <div class="changed" id="bChanged"></div>
-          <div class="brain-grid">
-            <div class="card"><h3>Decisions</h3><ul id="bDecisions"></ul></div>
-            <div class="card"><h3>Open questions</h3><ul id="bQuestions"></ul></div>
-            <div class="card"><h3>Ideas</h3><ul id="bIdeas"></ul></div>
-            <div class="card wide"><h3>Next steps</h3><ul id="bNext"></ul></div>
+        <p class="eyebrow">Our goal</p>
+        <h1 class="goal" id="bGoal"></h1>
+        <div class="nowbox" id="nowBox"><span class="nowlab">Where we are</span><p class="nowtext" id="bSummary"></p></div>
+        <div class="chgs" id="bChanged"></div>
+        <div class="bgrid">
+          <div class="box">
+            <h3>Decided <span id="nDec"></span></h3>
+            <div id="bDecisions"></div>
+          </div>
+          <div class="box">
+            <h3>Still open <span id="nQ"></span></h3>
+            <div id="bQuestions"></div>
+            <h3 style="margin-top:14px">Ideas <span id="nIdeas"></span></h3>
+            <div id="bIdeas"></div>
+          </div>
+          <div class="box span2">
+            <h3>Next steps</h3>
+            <div id="bNext"></div>
+          </div>
+          <div class="span2">
+            <p class="secl">Made so far <span class="n" id="nMade"></span></p>
+            <div class="gal" id="made"></div>
           </div>
         </div>
       </div>
 
-      <div class="view" id="boardView" hidden>
+      <div class="scroll board" id="boardView" hidden>
         <div class="board-tools">
-          <button class="swatch on" data-color="#1f2937" style="--c:#1f2937"></button>
-          <button class="swatch" data-color="#2563eb" style="--c:#2563eb"></button>
-          <button class="swatch" data-color="#dc2626" style="--c:#dc2626"></button>
-          <button class="swatch" data-color="#16a34a" style="--c:#16a34a"></button>
-          <button class="btn ghost small" id="clearBoard">Clear</button>
-          <span class="muted small">Everyone sees strokes live.</span>
-          <button class="btn primary small" id="shareBoard">Send to brain</button>
+          <button class="swatch on" data-color="#1E2A22" style="--c:#1E2A22" aria-label="Dark pen"></button>
+          <button class="swatch" data-color="#1D4ED8" style="--c:#1D4ED8" aria-label="Blue pen"></button>
+          <button class="swatch" data-color="#B42318" style="--c:#B42318" aria-label="Red pen"></button>
+          <button class="swatch" data-color="#1F6B45" style="--c:#1F6B45" aria-label="Green pen"></button>
+          <button class="btn ghost sm" id="clearBoard">Clear</button>
+          <span class="muted small grow">Everyone sees strokes live.</span>
+          <button class="btn pri sm" id="shareBoard">Send to the brief</button>
         </div>
         <canvas id="board" width="1600" height="1000"></canvas>
+        <p class="secl">On the board <span class="n" id="nBoard"></span></p>
+        <div class="bgal" id="boardGallery"></div>
       </div>
     </section>
 
-    <!-- JOBS + OUTPUTS -->
-    <section class="col" id="work">
-      <div class="col-head">
-        <h2>Agent work</h2>
-      </div>
-      <form class="newjob" id="newJob">
-        <select id="jobKind">
-          <option value="research">Research</option>
-          <option value="prototype">Prototype</option>
-        </select>
-        <input id="jobPrompt" placeholder="Ask an agent: research X / prototype Y" />
-        <button class="btn primary small" type="submit">Run</button>
-      </form>
-      <div class="jobs">
-        <div id="pipelines"></div>
-        <div id="jobs"></div>
+    <!-- WORK -->
+    <section class="col c-work" id="work" aria-label="Work">
+      <button class="rail" id="workRail" hidden aria-label="Show agent work"><span class="cnt amber" id="workRailNeeds" hidden></span><span class="cnt" id="workRailCount">0</span><span class="vl">Work</span></button>
+      <div class="colbody" id="workBody">
+        <div class="colhead"><h2>Work</h2><span class="muted small" id="workSub"></span></div>
+        <div class="scroll" id="workScroll">
+          <div class="modecard">
+            <h3>How Huddle works in this room</h3>
+            <div class="seg" role="group" aria-label="How much agents do on their own" id="modeSeg">
+              <button data-mode="suggest">Suggest</button>
+              <button data-mode="auto" class="on">Auto + ask</button>
+              <button data-mode="full">Full auto</button>
+            </div>
+            <p id="modeDesc"></p>
+            <div class="crow" style="margin-top:6px"><button class="link" id="stopAll">Stop all agents</button><span class="grow"></span><button class="link monly" id="connectBtn2">Connect your AI</button></div>
+          </div>
+          <div class="askrow">
+            <label for="jobPrompt" class="sr">Ask Huddle</label>
+            <input id="jobPrompt" class="inp" placeholder="Ask Huddle to research or build…" />
+            <button class="btn pri" id="askBtn">Go</button>
+          </div>
+          <div id="needsWrap" hidden><p class="secl amber" id="needs">Needs the room <span class="n" id="nNeeds"></span></p><div id="gates"></div></div>
+          <div id="suggWrap" hidden><p class="secl">Huddle suggests</p><div id="sugg"></div></div>
+          <p class="secl">Running <span class="n" id="nRun"></span></p>
+          <div id="running"></div>
+          <button class="drow" id="doneToggle" aria-expanded="false"><span class="secl" style="margin:0">Done <span class="n" id="nDone"></span></span><span class="grow"></span><span class="muted small" id="doneToggleLabel">Show</span></button>
+          <div id="done" hidden></div>
+        </div>
       </div>
     </section>
   </main>
 
-  <!-- Output viewer -->
-  <div class="overlay" id="viewer" hidden>
-    <div class="sheet">
-      <div class="sheet-head">
-        <div>
-          <span class="badge" id="vKind"></span>
-          <strong id="vTitle"></strong>
-        </div>
-        <div class="sheet-actions">
-          <button class="btn ghost small" id="vOpen" hidden>Open in new tab</button>
-          <button class="btn ghost small" id="vClose">Close</button>
-        </div>
+  <!-- ===== Phone: capture bar + tabs ===== -->
+  <div class="mcap">
+    <button class="plus" id="plusBtn" aria-label="Share a photo, link, note or sketch">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <label for="mNote" class="sr">Say or share anything</label>
+    <input id="mNote" class="inp" placeholder="Say or share anything…" enterkeyhint="send" />
+    <button class="bigmic" id="mMicBtn" aria-pressed="false" aria-label="Turn on your mic">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+  </div>
+  <nav class="mnav" id="mobileTabs" aria-label="Room sections">
+    <button data-tab="stream">Stream</button>
+    <button data-tab="brief" class="on">Brief</button>
+    <button data-tab="board">Board</button>
+    <button data-tab="work">Work<span class="badge" id="mBadge" hidden></span></button>
+  </nav>
+</div>
+
+<!-- ===== Overlays ===== -->
+<div class="rmenu" id="roomMenu" role="menu" aria-label="Your huddles" hidden>
+  <p class="lbl">Your huddles</p>
+  <div id="roomList"></div>
+  <button class="ritem new" id="newRoomBtn" role="menuitem"><span class="rdot" aria-hidden="true">+</span><span class="grow">Start a new huddle<small>Get a link to share in seconds</small></span></button>
+  <div class="monly" style="padding:8px 10px 4px">
+    <button class="vswitch light" id="visSwitch2" role="switch" aria-checked="false" aria-label="Private huddle"><span class="vside vpub">Public</span><span class="vtrack" aria-hidden="true"><span class="vknob"></span></span><span class="vside vpriv">Private</span></button>
+  </div>
+</div>
+
+<div class="ov" id="join" hidden>
+  <div class="sheet" role="dialog" aria-label="Join this huddle" style="padding:32px">
+    <span class="mark" aria-hidden="true" style="margin-bottom:14px">h</span>
+    <p class="muted" style="margin:0 0 6px">You’re invited to</p>
+    <h2 id="joinRoom"></h2>
+    <p class="muted" id="joinWho" style="font-size:14px;margin:0"></p>
+    <div class="goalbox" id="joinGoalBox"><span class="kb">Our goal</span><b id="joinGoal"></b></div>
+    <div class="jctx" id="joinLines"></div>
+    <div class="joinbox">
+      <label class="jlab" for="joinName">What’s your name?</label>
+      <div class="jrow2">
+        <input id="joinName" class="inp" placeholder="Your name" autocomplete="name" />
+        <button class="btn jbtn" id="joinBtn">Join the huddle
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
       </div>
-      <div class="sheet-body" id="vBody"></div>
-      <form class="feedback" id="vFeedback">
-        <input id="vFeedbackInput" placeholder="Feedback → the agent revises (e.g. 'make onboarding 2 steps', 'dig into pricing')" />
-        <button class="btn primary small" type="submit">Revise</button>
-      </form>
+      <p class="jnote">Huddle only hears you when your mic is on.</p>
     </div>
   </div>
+</div>
 
-  <!-- Join -->
-  <div class="overlay" id="join" hidden>
-    <form class="sheet join" id="joinForm">
-      <h2>Join the huddle</h2>
-      <p class="muted">Your name tags what you say and post.</p>
-      <input id="joinName" placeholder="Your name" autocomplete="name" required />
-      <button class="btn primary" type="submit">Join</button>
-    </form>
+<div class="ov" id="newRoom" hidden>
+  <div class="sheet" role="dialog" aria-label="Start a new huddle">
+    <div class="sheet-head"><h2>Start a new huddle</h2><button class="btn ghost sm" data-close="newRoom">Cancel</button></div>
+    <p class="muted" style="font-size:14px;margin:0">You’ll get one link. Anyone you send it to can join from a laptop or phone.</p>
+    <label class="lab" for="newName">Name</label>
+    <input id="newName" class="inp" placeholder="e.g. Hackathon team, Q4 launch, Garden plan" />
+    <label class="lab" for="newGoal">What are you trying to do? <span class="muted" style="font-weight:400">Optional. Huddle starts the brief with it.</span></label>
+    <textarea id="newGoal" class="inp" rows="3" placeholder="e.g. Pick one idea and ship a demo by 6 pm"></textarea>
+    <div class="crow" style="margin-top:18px"><button class="btn pri" id="createRoom">Start huddle and copy link</button></div>
   </div>
+</div>
 
-  <!-- Connect your AI -->
-  <div class="overlay" id="connect" hidden>
-    <div class="sheet">
-      <div class="sheet-head"><strong>Connect your own Claude / Gemini</strong>
-        <button class="btn ghost small" data-close="connect">Close</button></div>
-      <div class="sheet-body">
-        <p>Give your assistant these two commands (or paste the brief into its chat):</p>
-        <p class="muted small">Read the team's living brief:</p>
-        <pre id="curlGet"></pre>
-        <p class="muted small">Post a finding back into the room:</p>
-        <pre id="curlPost"></pre>
-      </div>
+<div class="ov" id="upgrade" hidden>
+  <div class="sheet" role="dialog" aria-label="Get a private space" style="padding:30px;max-width:460px">
+    <div class="upmark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+    <h2>Get a private space to host your huddle</h2>
+    <div id="upAsk" class="crow" style="margin-top:20px"><button class="btn pri" id="upYes">Get a private space</button><button class="btn ghost" data-close="upgrade">Keep it public</button></div>
+    <div id="upEmail" hidden>
+      <p class="muted" style="font-size:14px;margin:8px 0 0">Private spaces are coming soon. Leave your email and we’ll let you know when they’re ready.</p>
+      <label class="lab" for="upEmailInput">Your email</label>
+      <div class="askrow" style="margin:0"><input id="upEmailInput" class="inp" type="email" placeholder="you@example.com" autocomplete="email" /><button class="btn pri" id="upNotify">Notify me</button></div>
+      <div class="crow" style="margin-top:10px"><button class="btn ghost sm" data-close="upgrade">Not now</button></div>
+    </div>
+    <div id="upDone" hidden>
+      <p style="font-size:15px;margin:10px 0 0"><b>Coming soon.</b> We’ll email <span id="upDoneEmail"></span> when private spaces are ready. Your huddle stays public for now.</p>
+      <div class="crow" style="margin-top:18px"><button class="btn pri" data-close="upgrade">Got it</button></div>
     </div>
   </div>
+</div>
 
-  <div class="toast" id="toast" hidden></div>
+<div class="ov" id="shareSheet" hidden>
+  <div class="sheet" role="dialog" aria-label="Share into the room">
+    <div class="sheet-head"><h2>Share into the room</h2><button class="btn ghost sm" data-close="shareSheet">Close</button></div>
+    <p class="muted" style="font-size:13.5px;margin:0">It lands in the stream. Huddle reads it and folds it into the brief.</p>
+    <div class="sharegrid">
+      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>Camera<input type="file" accept="image/*" capture="environment" hidden class="shareFile" /></label>
+      <label class="share"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg></span>Photo<input type="file" accept="image/*" hidden class="shareFile" /></label>
+      <button class="share" data-share="link"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span>Link</button>
+      <button class="share" data-share="note"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6"/></svg></span>Note</button>
+      <button class="share" data-share="sketch"><span class="si" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></span>Sketch</button>
+    </div>
+  </div>
+</div>
 
-  <script type="module" src="./app.js"></script>
+<div class="ov" id="viewer" hidden>
+  <div class="sheet wide">
+    <div class="sheet-head">
+      <div style="flex:1;min-width:0"><span class="kb" id="vKind"></span><h2 id="vTitle" style="margin-top:6px"></h2></div>
+      <button class="btn ghost sm" id="vOpen" hidden>Open in new tab</button>
+      <button class="btn ghost sm" id="vClose">Close</button>
+    </div>
+    <div id="vBody"></div>
+    <div class="askrow" id="vFeedback" style="margin-top:18px">
+      <label for="vFeedbackInput" class="sr">Feedback for the agent</label>
+      <input id="vFeedbackInput" class="inp" placeholder="Redo with… e.g. “compare three tools side by side”" />
+      <button class="btn pri" id="vRevise">Make next version</button>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="connect" hidden>
+  <div class="sheet wide">
+    <div class="sheet-head"><h2>Bring your own AI into the room</h2><button class="btn ghost sm" data-close="connect">Close</button></div>
+    <p class="muted" style="font-size:14px;margin:0">Your Claude, Gemini or Codex reads the room’s brief before it works, and posts what it finds back here. Everyone sees it.</p>
+    <p class="lab">Paste this into your AI</p>
+    <pre id="aiPrompt"></pre>
+    <div class="crow" style="margin-top:10px"><button class="btn pri" id="copyPrompt">Copy prompt</button></div>
+    <details style="margin-top:16px"><summary class="lab" style="display:inline;cursor:pointer">Developer commands</summary>
+      <p class="muted small">Read the team’s living brief:</p><pre id="curlGet"></pre>
+      <p class="muted small">Post a finding back into the room:</p><pre id="curlPost"></pre>
+    </details>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script type="module" src="./app.js"></script>
 </body>
 </html>
