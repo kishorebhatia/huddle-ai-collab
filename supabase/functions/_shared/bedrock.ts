@@ -129,6 +129,10 @@ export async function bedrock(body: any): Promise<GeminiResult> {
     input.modelId = video ? MEDIA : SMART;
     input.inferenceConfig.maxTokens = 16000;
   }
+  // Callers that need long output (whole files, multi-file changes) can ask for more.
+  if (gc.maxOutputTokens) {
+    input.inferenceConfig.maxTokens = Number(gc.maxOutputTokens);
+  }
 
   const { modelId, ...payload } = input;
   // One LLM span per model call (OpenInference attributes, so Arize shows prompt, output and tokens).

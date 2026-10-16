@@ -697,10 +697,11 @@ function secretForm(p) {
   const key = `${p.id}:${p.gate.stage}`;
   if (secretForms.has(key)) return secretForms.get(key);
   const inputs = p.gate.inputs || [];
+  const server = p.gate.kind === "server_secret"; // operator room: keys for the production server, admins only
   const wrap = h("div", { class: "secretform" });
   const fields = inputs.map((i) => {
     const inp = h("input", { class: "inp", type: "password", autocomplete: "off", spellcheck: "false", placeholder: i.name, "aria-label": i.label });
-    const useSaved = h("button", { class: "btn ghost sm", hidden: true, onclick: async () => {
+    const useSaved = h("button", { class: "btn ghost sm", hidden: true, disabled: server, onclick: async () => {
       try { await fn("secrets", { room, action: "use_saved", name: i.name }); inp.value = ""; inp.placeholder = "Using your saved key"; inp.disabled = true; }
       catch (e) { toast(e.message); }
     } }, "Use my saved key");
@@ -708,14 +709,14 @@ function secretForm(p) {
       h("div", { class: "crow" }, inp, useSaved), i.why ? h("p", { class: "hint" }, `Used ${i.why.replace(/^to /, "to ")}.`) : null);
     return { i, inp, useSaved };
   });
-  const save = auth.token ? h("input", { type: "checkbox", checked: true, id: `save${p.id}` }) : null;
+  const save = auth.token && !server ? h("input", { type: "checkbox", checked: true, id: `save${p.id}` }) : null;
   const go = h("button", { class: "btn amber sm" }, "Save and continue");
   go.onclick = async () => {
     go.disabled = true;
     try {
       for (const f of fields) {
         const v = f.inp.value.trim();
-        if (v) await fn("secrets", { room, action: "set", name: f.i.name, value: v, save: !!save?.checked });
+        if (v) await fn("secrets", server ? { room, action: "set_server", name: f.i.name, value: v } : { room, action: "set", name: f.i.name, value: v, save: !!save?.checked });
         f.inp.value = "";
       }
       const r = await fn("orchestrate", { pipeline_id: p.id, action: "approve" });
@@ -725,11 +726,12 @@ function secretForm(p) {
     go.disabled = false;
   };
   wrap.append(
-    save ? h("label", { class: "small crow", for: `save${p.id}` }, save, "Also save to my account for my other huddles")
+    server ? h("p", { class: "hint" }, "Only a Huddle admin can add these. They go into the production server's environment, never into git or the room.")
+    : save ? h("label", { class: "small crow", for: `save${p.id}` }, save, "Also save to my account for my other huddles")
       : h("p", { class: "hint" }, "Signed in? Keys can be saved to your account and reused in huddles you own."),
     h("div", { class: "crow" }, go, h("button", { class: "btn ghost sm", onclick: () => pipeAct(p.id, "skip") }, "Skip this build")),
     h("p", { class: "hint" }, "Encrypted, used only by this build's sandbox, never shown in the room, the repo or the logs."));
-  if (auth.token) {
+  if (auth.token && !server) {
     fn("secrets", { room, action: "status", names: inputs.map((i) => i.name) })
       .then((st) => fields.forEach((f) => { if (st.saved?.includes(f.i.name)) f.useSaved.hidden = false; })).catch(() => {});
   }
@@ -817,7 +819,7 @@ function renderWork() {
       row.append(inp, h("button", { class: "btn amber sm", onclick: send }, "Answer"),
         h("button", { class: "btn ghost sm", onclick: () => pipeAct(p.id, "skip") }, "Use your judgment"));
       card.append(row, h("p", { class: "hint" }, "Or just answer out loud. Huddle will match it to this question."));
-    } else if (p.gate.kind === "secret") {
+    } else if (p.gate.kind === "secret" || p.gate.kind === "server_secret") {
       card.append(secretForm(p));
     } else if (p.gate.kind === "publish") {
       const out = jobsOf(p.id).filter((j) => j.status === "done" && j.kind === "prototype").pop();

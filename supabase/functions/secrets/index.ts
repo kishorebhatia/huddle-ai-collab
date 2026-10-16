@@ -4,7 +4,9 @@
 //   use_saved { name }            copy the caller's saved key into this room
 import { cors, db, json } from "../_shared/util.ts";
 import { caller, decryptSecret } from "../_shared/auth.ts";
-import { SECRET_NAME, secretNames, setRoomSecret, setUserSecret } from "../_shared/vault.ts";
+import { SECRET_NAME, secretNames, serverKeysMissing, setRoomSecret, setServerSecret, setUserSecret } from "../_shared/vault.ts";
+
+const ADMINS = (Deno.env.get("ADMIN_LOGINS") ?? "kishorebhatia").toLowerCase().split(",").map((x) => x.trim());
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -22,7 +24,22 @@ Deno.serve(async (req) => {
       return json({ have, missing, saved: (saved ?? []).map((s: { name: string }) => s.name), signed_in: !!who.uid });
     }
 
+    if (action === "status_server") {
+      const list = (Array.isArray(names) ? names : []).filter((n: string) => SECRET_NAME.test(n)).slice(0, 10);
+      const missing = await serverKeysMissing(sb, list);
+      return json({ have: list.filter((n: string) => !missing.includes(n)), missing, admin: !!who.login && ADMINS.includes(who.login.toLowerCase()) });
+    }
+
     if (!SECRET_NAME.test(String(name ?? ""))) return json({ error: "Key names look like ELEVENLABS_API_KEY" }, 400);
+
+    if (action === "set_server") {
+      // Server keys change what production runs on: admins only.
+      if (!who.uid || !who.login || !ADMINS.includes(who.login.toLowerCase())) return json({ error: "Only a Huddle admin can add server keys" }, 403);
+      const v = String(value ?? "").trim();
+      if (v.length < 8 || v.length > 4096 || /\s/.test(v)) return json({ error: "That doesn't look like a key" }, 400);
+      await setServerSecret(sb, name, v, who.uid);
+      return json({ ok: true });
+    }
 
     if (action === "set") {
       const v = String(value ?? "").trim();

@@ -8,7 +8,7 @@
 import { cors, db, json } from "../_shared/util.ts";
 import { getRoom, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
 import { planGoal, type Plan } from "../_shared/plan.ts";
-import { secretNames } from "../_shared/vault.ts";
+import { secretNames, serverKeysMissing } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 type Job = {
@@ -49,6 +49,8 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
   const STAGE_ONLY: Record<string, string> = {
     plan: "Plan how to deliver the goal end to end. Do not do the work yet.",
     improve: "Change Huddle's prompts to fix what the evidence shows. Only prompts.ts.",
+    triage: "Decide whether this is a change to Huddle and write its spec.",
+    change: "Change Huddle's code to do what the spec asks, and verify it.",
     pr: "Open a pull request with the reviewed change.",
     ship: "Merge the pull request once CI's evals pass (Full auto), or hand it to a human.",
     research: "Do ONLY the research. Do not write code, HTML or page copy — a later stage builds it.",
@@ -88,6 +90,19 @@ async function advance(sb: SupabaseClient, p: any, s: number, room: Room) {
     // Every finished pipeline is saved to the room's GitHub repository (created on the first one).
     invokeFn("github", { room: p.room_id, action: "publish", auto: true }).catch((e) => console.warn("auto publish", e));
     return;
+  }
+  // An operator change that needs new server keys waits for an admin to supply them.
+  const serverKeys = (p.meta?.triage?.needs_keys ?? []) as { name: string; label: string; why: string }[];
+  if (p.stages[next] === "change" && serverKeys.length) {
+    const missing = await serverKeysMissing(sb, serverKeys.map((k) => k.name));
+    if (missing.length) {
+      const need = serverKeys.filter((k) => missing.includes(k.name));
+      const question = `This change needs ${need.map((k) => k.label).join(" and ")} on the server. An admin adds ${need.length > 1 ? "them" : "it"} below: ` +
+        `stored encrypted, loaded into the server's environment, never in git or the room.`;
+      await save(sb, p.id, { status: "waiting", current: s, gate: { kind: "server_secret", question, stage: next, inputs: need } });
+      await postEvent(sb, p.room_id, `Needs a server key: "${p.title}" needs ${need.map((k) => k.label).join(", ")}. An admin adds it in Agent work.`, { pipeline_id: p.id });
+      return;
+    }
   }
   // A build that needs keys waits for the room to supply them (in every mode: nobody can guess a key).
   const inputs = (p.meta?.plan?.required_inputs ?? []) as Plan["required_inputs"];
@@ -146,6 +161,17 @@ async function step(sb: SupabaseClient, pid: number) {
   }
 
   // cur.status === "done"
+  if (p.stages[s] === "triage" && cur.review) {
+    const t = cur.review as { kind: string; title: string; reply: string; spec: string };
+    p.meta = { ...(p.meta ?? {}), triage: t };
+    if (t.kind !== "change") {
+      // Not a change to Huddle: answer, and stop here (no PR).
+      await save(sb, p.id, { status: "done", stages: ["triage"], current: 0, gate: null, meta: p.meta });
+      await postEvent(sb, p.room_id, `${t.reply} (Nothing to change in Huddle, so no pull request. A normal room can do this: start one from the room menu.)`, { pipeline_id: p.id });
+      return { answered: "not a change to Huddle" };
+    }
+    await save(sb, p.id, { meta: p.meta, title: t.title?.slice(0, 120) || p.title });
+  }
   if (p.stages[s] === "plan" && cur.review) {
     const plan = cur.review as Plan;
     const stages = stagesFor(plan);
@@ -221,6 +247,15 @@ async function act(sb: SupabaseClient, pid: number, action: string, answer?: str
     meta.approved_publish = true;
   }
   if (gate.kind === "budget") meta.budget_override_until = new Date(Date.now() + 3600_000).toISOString();
+  if (gate.kind === "server_secret") {
+    if (action === "skip") {
+      await save(sb, pid, { status: "stopped", gate: null });
+      await postEvent(sb, p.room_id, `Stopped "${p.title}": it needs server keys nobody added.`, { pipeline_id: pid });
+      return { stopped: pid };
+    }
+    const missing = await serverKeysMissing(sb, (gate.inputs ?? []).map((i: any) => i.name));
+    if (missing.length) return { missing };
+  }
   if (gate.kind === "secret") {
     if (action === "skip") {
       await save(sb, pid, { status: "stopped", gate: null });

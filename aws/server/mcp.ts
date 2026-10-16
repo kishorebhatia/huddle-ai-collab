@@ -50,6 +50,13 @@ const TOOLS = [
     props: { pipeline_id: { type: "integer" }, action: { type: "string", enum: ["approve", "skip", "answer"] }, answer: { type: "string" } },
     required: ["pipeline_id", "action"], perm: "answer" },
   { name: "add_to_board", description: "Pin a note card to the room's shared board.", props: { text: { type: "string" } }, required: ["text"], perm: "post" },
+  { name: "propose_change", description: "Operator room only: submit a change to Huddle's own code that you wrote. Huddle verifies it in a Daytona sandbox (type-check, UI syntax), has it reviewed, opens a pull request, and ships it under the room's merge rules. Give edits as exact search/replace pairs on existing files, and full content for new files.",
+    props: {
+      title: { type: "string" }, description: { type: "string", description: "what the change does and why" },
+      edits: { type: "array", items: { type: "object", properties: { path: { type: "string" }, search: { type: "string" }, replace: { type: "string" } }, required: ["path", "search", "replace"] } },
+      files: { type: "object", description: "new or fully replaced files: {path: content}", additionalProperties: { type: "string" } },
+      delete: { type: "array", items: { type: "string" } },
+    }, required: ["title", "description"], perm: "work" },
 ];
 
 export function createMcp(opts: {
@@ -182,6 +189,27 @@ export function createMcp(opts: {
         const r = await fn("orchestrate", { pipeline_id: p.id, action, answer: args.action === "answer" ? String(args.answer ?? "") : undefined });
         await fn("brain-api", { room, author: agent, kind: "note", text: `Answered "${clip(p.gate.question ?? "", 200)}": ${args.answer ?? action}` });
         return data(r);
+      }
+      case "propose_change": {
+        const op = Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator";
+        if (room !== op) return { ...text(`propose_change works only in the operator room (${op}). Use request_work here.`), isError: true };
+        const edits = Array.isArray(args.edits) ? args.edits : [];
+        const files = args.files && typeof args.files === "object" ? args.files : {};
+        const del = Array.isArray(args.delete) ? args.delete : [];
+        if (!edits.length && !Object.keys(files).length && !del.length) return { ...text("The change is empty: pass edits, files or delete."), isError: true };
+        // The same format Huddle's own change step writes, so both paths share the checks.
+        const patch = [
+          ...edits.map((e: Any) => `\`\`\`edit:${e.path}\n<<<<<<< SEARCH\n${e.search}\n=======\n${e.replace}\n>>>>>>> REPLACE\n\`\`\``),
+          ...Object.entries(files).map(([p, c]) => `\`\`\`file:${p}\n${c}\n\`\`\``),
+          ...del.map((p: string) => `DELETE: ${p}`),
+          `CHANGE: ${String(args.description).slice(0, 500)}`,
+        ].join("\n\n");
+        const sb = db();
+        const title = String(args.title).slice(0, 100);
+        await sb.from("events").insert({ room_id: room, author: agent, kind: "note", text: `Submitted a change to Huddle: ${title}. ${String(args.description).slice(0, 600)}` });
+        const p = await createPipeline(sb, { room, title, goal: String(args.description).slice(0, 4000), kind: "submitted", created_by: agent,
+          meta: { submitted: patch, triage: { kind: "change", title, spec: String(args.description).slice(0, 4000), needs_keys: [] } } });
+        return data({ pipeline_id: p.id, stages: p.stages, follow: "call wait_for_activity; Huddle posts the checks, review, PR and ship result" });
       }
       case "add_to_board": {
         const [b] = await sql`insert into public.board_items (room_id, kind, x, y, data, created_by)

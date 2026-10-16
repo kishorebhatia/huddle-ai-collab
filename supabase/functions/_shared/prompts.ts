@@ -202,3 +202,58 @@ Rules:
 Output the complete updated file as one block with the info string file:supabase/functions/_shared/prompts.ts,
 then lines starting with "CHANGE:" (one per change: what and why, citing the evidence), then one "EXPECT:" line
 saying which eval should improve.`;
+export const TRIAGE_SYSTEM = `You triage requests made in Huddle's operator room, where the team changes Huddle itself.
+Huddle is a web app (web/ static UI, a Deno gateway in aws/server, Supabase-style functions in supabase/functions,
+Postgres migrations, deploy on AWS EC2 via GitHub Actions, AI via Amazon Bedrock).
+- kind "change": anything that needs Huddle's code, prompts, UI, schema, infrastructure config or docs to change
+  (features, fixes, provider switches, refactors). Write a self-contained "spec" with every specific from the request.
+- kind "other": anything else (make a video, write a pitch, research a market, answer a question). Reply in one or
+  two sentences: what the operator can't do, and that a normal room can (research, builds, prototypes).
+needs_keys: server environment values the change cannot work without that Huddle doesn't already have, e.g.
+{"name":"OPENAI_API_KEY","label":"OpenAI API key","why":"to call OpenAI models instead of Bedrock"}. Only real secrets.
+risky: true if the change touches deploys, infrastructure, auth, access rules, or data migrations.`;
+
+export const TRIAGE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    kind: { type: "STRING", enum: ["change", "other"] },
+    title: { type: "STRING", description: "short imperative title for the change" },
+    spec: { type: "STRING" },
+    reply: { type: "STRING", description: "for kind other: the reply to post" },
+    needs_keys: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { name: { type: "STRING" }, label: { type: "STRING" }, why: { type: "STRING" } }, required: ["name", "label", "why"] },
+    },
+    risky: { type: "BOOLEAN" },
+  },
+  required: ["kind", "title", "spec", "reply", "needs_keys", "risky"],
+};
+
+export const LOCATE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    read: { type: "ARRAY", items: { type: "STRING" }, description: "existing repo paths to read before changing (max 12)" },
+    why: { type: "STRING" },
+  },
+  required: ["read", "why"],
+};
+
+export const CHANGE_SYSTEM = `You change Huddle's own code to do what the operator asked. You get the spec, the repo's file list,
+and the full text of the files most likely involved. Make the smallest complete change that does the job, matching the
+surrounding code's style. Keep secrets out of code: read them from Deno.env / process.env by name.
+Output format, exactly:
+- To edit an existing file, one block per edit, with text copied exactly from the file (enough lines to be unique):
+\`\`\`edit:<path>
+<<<<<<< SEARCH
+<exact existing lines>
+=======
+<replacement lines>
+>>>>>>> REPLACE
+\`\`\`
+- To create a file or replace a small file entirely: \`\`\`file:<path>\` with the full content.
+- To delete a file: a line "DELETE: <path>".
+Database changes go in a new file supabase/migrations/<YYYYMMDDHHMMSS>_<name>.sql that is safe to re-run.
+If the change needs work Huddle can't do from code (create a cloud account, DNS, a new server), still make every code
+change, and add the manual steps as lines starting with "MANUAL:".
+After the blocks, lines starting with "CHANGE:" (what and why, one per change), and one "VERIFY:" line saying how a
+person can check it works on the live site.`;

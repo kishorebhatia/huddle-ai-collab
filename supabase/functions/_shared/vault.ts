@@ -26,6 +26,20 @@ export async function setUserSecret(sb: SupabaseClient, userId: number, name: st
   await sb.from("user_secrets").upsert({ user_id: userId, name, value_enc: await encryptSecret(value), updated_at: new Date().toISOString() });
 }
 
+/** Server environment keys (set by an admin from the operator room) that the server doesn't have yet. */
+export async function serverKeysMissing(sb: SupabaseClient, names: string[]) {
+  if (!names.length) return [];
+  const { data } = await sb.from("server_secrets").select("name").in("name", names);
+  const stored = new Set((data ?? []).map((r: { name: string }) => r.name));
+  return names.filter((n) => !Deno.env.get(n) && !stored.has(n));
+}
+
+export async function setServerSecret(sb: SupabaseClient, name: string, value: string, userId: number) {
+  await sb.from("server_secrets").upsert({ name, value_enc: await encryptSecret(value), set_by: userId, updated_at: new Date().toISOString() });
+  Deno.env.set(name, value); // this server process uses it right away; a restart loads it from the table
+  registerSecret(value);
+}
+
 /** Which of `names` this room can use: its own secrets first, then its owner's saved ones. */
 export async function secretNames(sb: SupabaseClient, room: string, names: string[]) {
   if (!names.length) return { have: [] as string[], missing: [] as string[] };

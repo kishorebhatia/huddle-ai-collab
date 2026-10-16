@@ -2,8 +2,11 @@
 // Status streams back via Realtime; pipeline jobs hand control back to the orchestrator when done.
 import { background, cors, db, FAST_MODEL, gemini, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
 import { invokeFn } from "../_shared/pipeline.ts";
-import { APP_SYSTEM, IMPROVE_SYSTEM, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
-import { adminToken, currentPrompts, evidence, mergePr, openPr, PROMPTS_PATH, typeCheck, waitForChecks } from "../_shared/operator.ts";
+import { APP_SYSTEM, CHANGE_SYSTEM, IMPROVE_SYSTEM, LOCATE_SCHEMA, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM, TRIAGE_SCHEMA, TRIAGE_SYSTEM } from "../_shared/prompts.ts";
+import {
+  adminToken, applyChange, currentPrompts, evidence, mergePr, openPr, openPrFiles, PROMPTS_PATH, readFiles, repoTree, revertMerge,
+  sensitiveFiles, typeCheck, verifyChange, waitForChecks, waitForDeploy,
+} from "../_shared/operator.ts";
 import { planGoal, planMarkdown, type Plan } from "../_shared/plan.ts";
 import { resolveSecrets } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -99,6 +102,18 @@ async function deployToVercel(html: string, name: string): Promise<string> {
 async function setMeta(sb: SupabaseClient, jobId: number, patch: Record<string, unknown>) {
   const { data } = await sb.from("jobs").select("meta").eq("id", jobId).maybeSingle();
   await sb.from("jobs").update({ meta: { ...(data?.meta ?? {}), ...patch } }).eq("id", jobId);
+}
+
+/** After a deploy: is the live site up, serving the app, and answering its health check? */
+async function liveCheck(): Promise<{ ok: boolean; note: string }> {
+  const site = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
+  if (!site) return { ok: true, note: "no public URL configured" };
+  await new Promise((r) => setTimeout(r, 15_000)); // let the restarted server settle
+  const get = (p: string) => fetch(`${site}${p}`, { signal: AbortSignal.timeout(15_000) }).then(async (r) => ({ ok: r.ok, text: await r.text() })).catch(() => ({ ok: false, text: "" }));
+  const [h, page, js] = await Promise.all([get("/healthz"), get("/?room=demo"), get("/app.js")]);
+  const fns = (() => { try { return JSON.parse(h.text).functions?.length ?? 0; } catch { return 0; } })();
+  const ok = h.ok && fns >= 10 && page.ok && /<title>/i.test(page.text) && js.ok && js.text.length > 1000;
+  return { ok, note: `health ${h.ok ? "ok" : "down"}, ${fns} functions, page ${page.ok ? "ok" : "down"}, app.js ${js.ok ? "ok" : "down"}` };
 }
 
 /** Store a file in the public "board" bucket and return its URL. */
@@ -300,7 +315,75 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       ? await sb.from("pipelines").select("goal, meta").eq("id", job.pipeline_id).maybeSingle() : { data: null };
     const plan: Plan | undefined = pipe?.meta?.plan;
 
-    if (job.kind === "improve") {
+    if (job.kind === "triage") {
+      // Operator room: is this a change to Huddle, or something a normal room should do?
+      const t = await geminiJson<any>([{ text: `REQUEST: ${pipe?.goal ?? job.prompt}\n\nROOM CONTEXT:\n${ctx.text.slice(0, 4000)}` }],
+        TRIAGE_SCHEMA, FAST_MODEL, TRIAGE_SYSTEM);
+      t.needs_keys = (Array.isArray(t.needs_keys) ? t.needs_keys : []).filter((k: any) => /^[A-Z][A-Z0-9_]{1,63}$/.test(String(k.name ?? "")));
+      const md = t.kind === "change"
+        ? `**Change to Huddle:** ${t.title}\n\n${t.spec}${t.needs_keys.length ? `\n\n**Needs server keys:** ${t.needs_keys.map((k: any) => k.name).join(", ")}` : ""}${t.risky ? "\n\nFlagged risky: a person merges it." : ""}`
+        : t.reply;
+      await sb.from("jobs").update({ status: "done", review: t, output_md: md, updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": JSON.stringify(t) });
+    } else if (job.kind === "change") {
+      // Operator room: change any part of Huddle. Locate the files, edit them, verify the repo in Daytona (one fix).
+      const { token } = await adminToken(sb);
+      const tree = await repoTree(token);
+      const spec: string = pipe?.meta?.triage?.spec ?? pipe?.goal ?? job.prompt;
+      const submitted: string | undefined = pipe?.meta?.submitted;
+      let toRead: string[];
+      if (submitted) {
+        toRead = [...submitted.matchAll(/```edit:([^\s`]+)/g)].map((m) => m[1]);
+      } else {
+        const loc = await geminiJson<{ read: string[]; why: string }>([{ text:
+          `SPEC: ${spec}\n\nREPO FILES:\n${tree.paths.join("\n")}\n\nList the existing files to read before making this change (max 12).` }],
+          LOCATE_SCHEMA, FAST_MODEL, "You know this codebase's layout from its paths. Pick the files a careful engineer would open first.");
+        toRead = (loc.read ?? []).filter((p) => tree.paths.includes(p)).slice(0, 12);
+      }
+      let current = await readFiles(tree.sha, toRead);
+      const shown = () => Object.entries(current).map(([p, c]) => `===== ${p} =====\n${c}`).join("\n\n");
+      // A revision carries the reviewer's instructions (they're in this job's prompt).
+      if (job.parent_id) parentBlock += `\n\nTHE REVIEW OF YOUR LAST ATTEMPT ASKED FOR:\n${job.prompt}`;
+      let ask = `SPEC: ${spec}\n${parentBlock}\n\nREPO FILES:\n${tree.paths.join("\n")}\n\nFILES YOU CAN EDIT (full text):\n${shown()}`;
+      let result = applyChange(submitted ?? "", current);
+      let check = { ok: false, log: "" };
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!(submitted && attempt === 0)) {
+          const { text } = await gemini({
+            systemInstruction: { parts: [{ text: CHANGE_SYSTEM }] }, contents: [{ role: "user", parts: [{ text: ask }] }],
+            generationConfig: { maxOutputTokens: 32000 },
+          }, SMART_MODEL);
+          result = applyChange(text, current);
+        }
+        // Edits to files it hadn't read: read them and try again.
+        const unread = result.errors.filter((e) => e.includes("not read")).map((e) => e.split(":")[0]).filter((p) => tree.paths.includes(p));
+        if (unread.length && attempt < 2) {
+          current = { ...current, ...(await readFiles(tree.sha, unread)) };
+          ask = `SPEC: ${spec}\n${parentBlock}\n\nREPO FILES:\n${tree.paths.join("\n")}\n\nFILES YOU CAN EDIT (full text):\n${shown()}\n\nYour last answer edited files you hadn't seen; they're included now. Answer again in full.`;
+          continue;
+        }
+        if (!Object.keys(result.files).length && !result.deleted.length) {
+          ask += `\n\nYOUR LAST ANSWER CHANGED NOTHING${result.errors.length ? `:\n${result.errors.join("\n")}` : ""}. Answer again in the exact format.`;
+          continue;
+        }
+        check = await verifyChange(result.files, result.deleted);
+        if (check.ok && !result.errors.length) break;
+        ask += `\n\nYOUR LAST CHANGE FAILED:\n${[...result.errors, check.ok ? "" : check.log].join("\n").slice(-4000)}\nFix it and answer again in full.`;
+      }
+      if (!check.ok || result.errors.length) throw new Error(`the change doesn't pass checks: ${[...result.errors, check.log].join(" ").slice(-400)}`);
+      const sensitive = sensitiveFiles(result.files, result.deleted);
+      const list = [...Object.keys(result.files).map((p) => (tree.paths.includes(p) ? `- edit \`${p}\`` : `- new \`${p}\``)), ...result.deleted.map((p) => `- delete \`${p}\``)];
+      const md = `**Change to Huddle**\n\n${result.changes.map((c) => `- ${c}`).join("\n") || "- (no summary)"}\n\n**Files**\n${list.join("\n")}\n\n` +
+        `**Checks in Daytona:** deno check (server, functions, evals) and node --check (UI) passed.` +
+        (result.manual.length ? `\n\n**Manual steps (a person does these):**\n${result.manual.map((m) => `- ${m}`).join("\n")}` : "") +
+        (sensitive.length ? `\n\n**Sensitive files** (a person merges): ${sensitive.map((p) => `\`${p}\``).join(", ")}` : "") +
+        (result.verify ? `\n\n**How to check it live:** ${result.verify}` : "");
+      await sb.from("jobs").update({
+        status: "done", files: result.files, output_md: md, updated_at: now(),
+        meta: { ...(job.meta ?? {}), base_sha: tree.sha, deleted: result.deleted, changes: result.changes, manual: result.manual, verify: result.verify, sensitive },
+      }).eq("id", jobId);
+      s.set({ "output.value": md });
+    } else if (job.kind === "improve") {
       // Huddle improving Huddle: evidence → smallest prompt change → deno check in Daytona (one fix if it fails).
       const { token } = await adminToken(sb);
       const cur = await currentPrompts(token);
@@ -323,18 +406,20 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       await sb.from("jobs").update({ status: "done", files: { [PROMPTS_PATH]: content }, output_md: md, meta: { ...(job.meta ?? {}), base_sha: cur.sha, changes, expect }, updated_at: now() }).eq("id", jobId);
       s.set({ "output.value": md });
     } else if (job.kind === "pr") {
-      const { data: change } = await sb.from("jobs").select("id, files, meta, output_md").eq("pipeline_id", job.pipeline_id)
-        .eq("kind", "improve").eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
-      if (!change?.files?.[PROMPTS_PATH]) throw new Error("no reviewed change to propose");
+      const { data: change } = await sb.from("jobs").select("id, kind, files, meta, output_md").eq("pipeline_id", job.pipeline_id)
+        .in("kind", ["improve", "change"]).eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
+      if (!change?.files || !Object.keys(change.files).length && !change.meta?.deleted?.length) throw new Error("no reviewed change to propose");
       const { data: review } = await sb.from("jobs").select("review").eq("pipeline_id", job.pipeline_id).eq("kind", "review").eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
       const { token } = await adminToken(sb);
       const changes: string[] = change.meta?.changes ?? [];
-      const title = `Huddle: ${(changes[0] ?? pipe?.goal ?? "improve prompts").replace(/[.\s]+$/, "").slice(0, 80)}`;
+      const title = `Huddle: ${(pipe?.meta?.triage?.title ?? changes[0] ?? pipe?.goal ?? "improve prompts").replace(/[.\s]+$/, "").slice(0, 80)}`;
       const body = `Proposed by Huddle's operator room from production evidence (Arize evals, lessons, failed pipelines).\n\n` +
         `${change.output_md}\n\n**Review:** ${review?.review ? `${review.review.verdict}, ${review.review.score}/10` : "n/a"}\n\n` +
         `The \`evals\` check runs the regression set with this prompt and logs it to Arize as an experiment. Merging deploys it.\n\n` +
         `🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
-      const pr = await openPr(token, change.files[PROMPTS_PATH], change.meta?.base_sha, title, body);
+      const pr = change.kind === "change"
+        ? await openPrFiles(token, change.files, change.meta?.deleted ?? [], change.meta?.base_sha, title, body.replace("from production evidence (Arize evals, lessons, failed pipelines)", `on request: ${(pipe?.goal ?? "").slice(0, 300)}`).replace("runs the regression set with this prompt and logs it to Arize as an experiment", "type-checks everything and runs the brief regression set (logged to Arize)"))
+        : await openPr(token, change.files[PROMPTS_PATH], change.meta?.base_sha, title, body);
       await sb.from("jobs").update({ status: "done", output_md: `Pull request #${pr.number}: ${pr.url}`, sources: [{ title: `PR #${pr.number}`, url: pr.url }],
         meta: { ...(job.meta ?? {}), pr_number: pr.number, pr_url: pr.url, pr_title: title }, updated_at: now() }).eq("id", jobId);
       s.set({ "output.value": pr.url });
@@ -348,16 +433,43 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Waiting for CI's evals on PR #${n}…`, meta: { job_id: jobId } });
       const c = await waitForChecks(token, n);
       const { data: roomRow } = await sb.from("rooms").select("mode").eq("id", job.room_id).maybeSingle();
+      const { data: change } = await sb.from("jobs").select("meta").eq("pipeline_id", job.pipeline_id).in("kind", ["improve", "change"])
+        .eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
+      const { data: lastReview } = await sb.from("jobs").select("review").eq("pipeline_id", job.pipeline_id).eq("kind", "review")
+        .eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
+      const score = Number(lastReview?.review?.score ?? 0);
+      const sensitive: string[] = change?.meta?.sensitive ?? [];
+      const manual: string[] = change?.meta?.manual ?? [];
+      const hand = (why: string) => `CI passed on PR #${n}, but ${why}, so a person merges it: ${prJob.meta.pr_url}`;
       let md: string;
       if (c.conclusion !== "success") {
-        md = `Not merged: CI's evals ${c.conclusion} on PR #${n}${c.url ? ` (${c.url})` : ""}. The change stays a proposal.`;
+        md = `Not merged: CI ${c.conclusion} on PR #${n}${c.url ? ` (${c.url})` : ""}. The change stays a proposal.`;
       } else if (roomRow?.mode !== "full") {
-        md = `CI's evals passed on PR #${n}. Merge it to deploy: ${prJob.meta.pr_url} (Huddle merges by itself only in Full auto).`;
+        md = hand("Huddle merges by itself only in Full auto");
+      } else if (score < 7) {
+        md = hand(`its final review scored ${score}/10 (Huddle merges only at 7 or more)`);
+      } else if (sensitive.length) {
+        md = hand(`it touches sensitive files (${sensitive.join(", ")})`);
+      } else if (manual.length) {
+        md = hand(`it needs manual steps first (${manual.join("; ").slice(0, 300)})`);
       } else {
         const m = await mergePr(token, n, prJob.meta.pr_title ?? `Huddle change`);
-        md = m.merged
-          ? `Merged PR #${n} after CI's evals passed (commit ${m.sha.slice(0, 7)}). CI now runs on ${"the branch"} and deploys it when the evals pass again.`
-          : `CI passed but GitHub wouldn't merge PR #${n}; merge it yourself: ${prJob.meta.pr_url}`;
+        if (!m.merged) {
+          md = `CI passed but GitHub wouldn't merge PR #${n}; merge it yourself: ${prJob.meta.pr_url}`;
+        } else {
+          await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Merged PR #${n} (review ${score}/10, CI passed). Waiting for the deploy…`, meta: { job_id: jobId } });
+          const d = await waitForDeploy(token, m.sha);
+          const live = await liveCheck();
+          if (d.conclusion === "success" && live.ok) {
+            md = `Shipped PR #${n}: merged, deployed (${d.url}), and the live site passed its check (${live.note}).`;
+          } else {
+            const why = d.conclusion !== "success" ? `the deploy run ${d.conclusion}` : `the live site failed its check (${live.note})`;
+            const rev = await revertMerge(token, m.sha, why);
+            md = rev
+              ? `Merged PR #${n}, but ${why}. Huddle reverted it (commit ${rev.slice(0, 7)}); CI redeploys the previous version.`
+              : `Merged PR #${n}, but ${why}, and newer commits landed since, so Huddle didn't auto-revert. A person should check now: ${prJob.meta.pr_url}`;
+          }
+        }
       }
       await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: md, meta: { job_id: jobId } });
       await sb.from("jobs").update({ status: "done", output_md: md, sources: [{ title: `PR #${n}`, url: prJob.meta.pr_url }], updated_at: now() }).eq("id", jobId);

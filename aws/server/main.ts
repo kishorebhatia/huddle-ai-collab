@@ -395,6 +395,16 @@ async function handle(req: Request): Promise<Response> {
   return serveDir(req, { fsRoot: `${ROOT}web`, quiet: true });
 }
 
+// Keys an admin added from the operator room (e.g. a new model provider) join the server's environment
+// before the functions load, so code that reads them at import time sees them too.
+try {
+  const { decryptSecret } = await import("../../supabase/functions/_shared/auth.ts");
+  for (const r of await sql`select name, value_enc from public.server_secrets`) {
+    if (!Deno.env.get(r.name)) Deno.env.set(r.name, await decryptSecret(r.value_enc));
+  }
+} catch (e) {
+  console.warn("server keys not loaded", (e as Error).message);
+}
 await loadFunctions();
 await sql.listen("huddle_changes", (m) => onChange(m).catch((e) => console.error("change", e)));
 

@@ -31,6 +31,11 @@ jobs:
           deno-version: v2.1.4
       - name: Type-check the server and functions
         run: deno check aws/server/main.ts supabase/functions/*/index.ts evals/run.ts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the UI's JavaScript
+        run: for f in web/*.js; do node --check "$f"; done
       - name: Run evals (Arize experiment + gate)
         env:
           HUDDLE_URL: ${{ vars.HUDDLE_URL }}
