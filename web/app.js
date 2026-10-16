@@ -1447,10 +1447,46 @@ function openConnect() {
   const post = `curl -X POST "${FN_BASE}/brain-api" -H "content-type: application/json" \\\n  -d '{"room":"${room}","author":"${me || "my-claude"}","text":"<finding>"}'`;
   $("curlGet").textContent = get;
   $("curlPost").textContent = post;
+  renderMcp(`${location.origin}/mcp?room=${encodeURIComponent(room)}`);
   $("aiPrompt").textContent =
     `You are helping my team in a Huddle room.\nBefore you work, read our living brief:\n${get}\n\nWhen you find something useful, post it back to the room as a finding, with sources:\n${post}`;
   $("connect").hidden = false;
 }
+// Huddle MCP: the room's link (public rooms), or a personal revocable link with chosen permissions.
+function renderMcp(url) {
+  $("mcpUrl").textContent = url;
+  $("mcpCmd").textContent = `claude mcp add --transport http huddle "${url}"`;
+  const priv = state.room?.visibility === "private";
+  if (priv) $("mcpNote").textContent = "This huddle is private: make a personal link to connect an AI. You can revoke it any time. Keys are never sent through it.";
+  const mine = store.json(`huddle:mcp:${room}`, []);
+  const list = $("mcpMine");
+  list.innerHTML = "";
+  for (const l of mine) {
+    list.append(h("div", { class: "crow small", style: "margin-top:6px" },
+      h("code", { class: "grow", style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, l.url),
+      h("button", { class: "btn ghost sm", onclick: async () => { try { await navigator.clipboard.writeText(`claude mcp add --transport http huddle "${l.url}"`); toast("Copied the Claude Code command."); } catch {} } }, "Copy"),
+      h("button", { class: "btn ghost sm", onclick: async () => {
+        await fetch(`/mcp/links?key=${encodeURIComponent(l.key)}`, { method: "DELETE" });
+        store.set(`huddle:mcp:${room}`, JSON.stringify(mine.filter((x) => x.key !== l.key)));
+        toast("Link revoked."); renderMcp(url);
+      } }, "Revoke")));
+  }
+}
+$("mcpMake").onclick = async () => {
+  try {
+    const r = await (await fetch("/mcp/links", {
+      method: "POST", headers: { "content-type": "application/json", ...(auth.token ? { authorization: `Bearer ${auth.token}` } : {}) },
+      body: JSON.stringify({ room, label: me || null, perms: { post: true, work: $("mcpWork").checked, answer: $("mcpAnswer").checked } }),
+    })).json();
+    if (r.error) return toast(r.error);
+    const url = `${r.url}${me ? `&as=${encodeURIComponent(me)}` : ""}`;
+    const mine = store.json(`huddle:mcp:${room}`, []);
+    store.set(`huddle:mcp:${room}`, JSON.stringify([{ url, key: r.key }, ...mine].slice(0, 5)));
+    try { await navigator.clipboard.writeText(`claude mcp add --transport http huddle "${url}"`); } catch {}
+    toast("Your link is ready, and the Claude Code command is copied.");
+    renderMcp(`${location.origin}/mcp?room=${encodeURIComponent(room)}`);
+  } catch (e) { toast(e.message); }
+};
 $("connectBtn").onclick = openConnect;
 $("connectBtn2").onclick = openConnect;
 $("copyPrompt").onclick = async () => {
@@ -1642,8 +1678,8 @@ function renderPeers() {
     seen.set(p.name, { ...p, mic: p.mic || prev?.mic, tabs: (prev?.tabs || 0) + 1, you: p.clientId === clientId || prev?.you });
   }
   for (const p of seen.values()) {
-    wrap.append(h("span", { class: `pav${p.mic ? " mic" : ""}`, style: `background:${colorFor(p.name)}`,
-      title: `${p.name}${p.you ? " (you)" : ""}${p.mic ? " · mic on" : ""}${p.tabs > 1 ? ` · ${p.tabs} tabs` : ""}` }, p.name.slice(0, 1).toUpperCase()));
+    wrap.append(h("span", { class: `pav${p.mic ? " mic" : ""}${p.ai ? " ai" : ""}`, style: `background:${colorFor(p.name)}`,
+      title: `${p.name}${p.ai ? " · AI connected over MCP" : ""}${p.you ? " (you)" : ""}${p.mic ? " · mic on" : ""}${p.tabs > 1 ? ` · ${p.tabs} tabs` : ""}` }, p.ai ? "AI" : p.name.slice(0, 1).toUpperCase()));
   }
   renderJoinInfo();
 }

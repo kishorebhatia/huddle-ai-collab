@@ -12,6 +12,7 @@ import { serveDir } from "jsr:@std/http@1.0.12/file-server";
 import { clip, emitSpan, pipelineCtx, span, type Ctx } from "../../supabase/functions/_shared/trace.ts";
 import { caller } from "../../supabase/functions/_shared/auth.ts";
 import { handleAuth } from "./auth.ts";
+import { createMcp } from "./mcp.ts";
 import { redactPatterns } from "../../supabase/functions/_shared/secrets.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
@@ -234,6 +235,33 @@ async function evictOutsiders(room: string) {
   }
 }
 
+// ---------- connected AIs (MCP) ----------
+// An AI connected over MCP shows up in the room's presence like a person, marked as an AI, until it goes quiet.
+const AGENT: Client = { ws: { readyState: 3 } as unknown as WebSocket, chans: new Map() };
+const agentsSeen = new Map<string, { topic: string; at: number }>();
+function agentSeen(room: string, sid: string, name: string) {
+  const topic = `realtime:room-${room}`;
+  const key = `ai-${sid.slice(0, 12)}`;
+  const was = agentsSeen.get(key);
+  agentsSeen.set(key, { topic, at: Date.now() });
+  if (was) return;
+  if (!presence.has(topic)) presence.set(topic, new Map());
+  const meta = { name, clientId: key, ai: true, mic: false, phx_ref: String(refSeq++) };
+  presence.get(topic)!.set(key, { client: AGENT, meta });
+  for (const o of clients) if (o.chans.has(topic)) send(o, topic, "presence_diff", { joins: metasOf(key, meta), leaves: {} });
+}
+setInterval(() => {
+  for (const [key, a] of agentsSeen) {
+    if (Date.now() - a.at < 3 * 60_000) continue;
+    agentsSeen.delete(key);
+    const p = presence.get(a.topic)?.get(key);
+    if (!p) continue;
+    presence.get(a.topic)!.delete(key);
+    for (const o of clients) if (o.chans.has(a.topic)) send(o, a.topic, "presence_diff", { joins: {}, leaves: metasOf(key, p.meta) });
+  }
+}, 30_000);
+const handleMcp = createMcp({ sql, handlers, canSee, agentSeen });
+
 // ---------- tracing ----------
 // Each function call is a span. Pipeline work joins its pipeline's trace; everything else gets its own
 // trace in the room's session, so Arize groups a room's activity together.
@@ -331,6 +359,7 @@ async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS" && !p.startsWith("/functions/")) return new Response(null, { headers: CORS });
   if (p.startsWith("/rest/v1")) return proxyRest(req, url);
   if (p.startsWith("/storage/v1/")) return storage(req, p);
+  if (p === "/mcp" || p === "/mcp/links") return await handleMcp(req, url);
   if (p.startsWith("/auth/")) {
     const res = await handleAuth(req, url, sql);
     if (res) return res;

@@ -344,6 +344,21 @@
 <div class="ov" id="connect" hidden>
   <div class="sheet wide">
     <div class="sheet-head"><h2>Bring your own AI into the room</h2><button class="btn ghost sm" data-close="connect">Close</button></div>
+    <div class="mcpcard">
+      <div class="crow"><b>Huddle MCP</b><span class="grow"></span><span class="muted small">recommended</span></div>
+      <p class="small" style="margin:4px 0 8px">Join this huddle from your own AI. Read the living brief and the stream, post findings, start research or builds, and follow agent work as it runs. Works with Claude Code, Claude Desktop and claude.ai, Cursor, and any MCP client.</p>
+      <pre id="mcpUrl"></pre>
+      <p class="lab">Claude Code</p>
+      <pre id="mcpCmd"></pre>
+      <div class="crow small" style="margin-top:8px;gap:14px">
+        <label class="crow"><input type="checkbox" id="mcpWork" checked> Can start work</label>
+        <label class="crow"><input type="checkbox" id="mcpAnswer"> Can answer the room’s questions</label>
+        <span class="grow"></span><button class="btn pri sm" id="mcpMake">Make my link</button>
+      </div>
+      <p class="hint" id="mcpNote">This link reads and posts in this public huddle; anyone with it can. “Make my link” gives you a personal link you can revoke, with the permissions you tick. Keys are never sent through it: Huddle asks for those in Agent work.</p>
+      <div id="mcpMine"></div>
+    </div>
+    <p class="lab" style="margin-top:16px">Or paste a prompt</p>
     <p class="muted" style="font-size:14px;margin:0">Your Claude, Gemini or Codex reads the room’s brief before it works, and posts what it finds back here. Everyone sees it.</p>
     <p class="lab">Paste this into your AI</p>
     <pre id="aiPrompt"></pre>
