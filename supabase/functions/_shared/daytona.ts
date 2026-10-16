@@ -49,6 +49,24 @@ async function evictOldest(): Promise<boolean> {
   return true;
 }
 
+/** An existing Huddle sandbox with this role, started if it was stopped (so stopping one never leaks a new one). */
+export async function findSandbox(role: string): Promise<Sandbox | null> {
+  const list = await (await api(`${API}/sandbox`)).json();
+  // deno-lint-ignore no-explicit-any
+  const hit = ((Array.isArray(list) ? list : list.items) ?? []).find((x: any) =>
+    x.labels?.app === "huddle" && x.labels?.role === role && ["started", "stopped", "archived"].includes(x.state));
+  if (!hit) return null;
+  if (hit.state !== "started") {
+    await api(`${API}/sandbox/${hit.id}/start`, { method: "POST" }, 120_000);
+    for (let i = 0; i < 60; i++) {
+      if ((await (await api(`${API}/sandbox/${hit.id}`)).json()).state === "started") break;
+      await sleep(2000);
+    }
+  }
+  const base = String(hit.toolboxProxyUrl ?? "https://proxy.app.daytona.io/toolbox").replace(/\/$/, "");
+  return { id: hit.id, toolbox: base.endsWith(hit.id) ? base : `${base}/${hit.id}`, url: "" };
+}
+
 /** A started public sandbox (no site yet). */
 export async function deploySandbox(labels: Record<string, string>): Promise<Sandbox> {
   const create = () => api(`${API}/sandbox`, {

@@ -1,7 +1,7 @@
 // Keeps keys out of room repositories. Two passes before anything is pushed:
 //   1. known key patterns, redacted here (instant)
 //   2. gitleaks over the exact files, inside a Daytona sandbox; anything it finds is redacted too
-import { daytonaOn, deploySandbox, exec, upload, type Sandbox } from "./daytona.ts";
+import { daytonaOn, deploySandbox, exec, findSandbox, upload, type Sandbox } from "./daytona.ts";
 import { span } from "./trace.ts";
 
 const PATTERNS: [string, RegExp][] = [
@@ -45,7 +45,13 @@ const G = globalThis as any;
 
 async function scanner(): Promise<Sandbox> {
   if (G.__huddleScanner) return G.__huddleScanner;
-  const sb = await deploySandbox({ app: "huddle", role: "secret-scan" });
+  // Reuse the scanner sandbox (restarting it if someone stopped it); create one only if none exists.
+  const existing = await findSandbox("secret-scan");
+  if (existing && (await exec(existing, "test -x /home/daytona/bin/gitleaks && echo ok", 20)).result.includes("ok")) {
+    G.__huddleScanner = existing;
+    return existing;
+  }
+  const sb = existing ?? await deploySandbox({ app: "huddle", role: "secret-scan" });
   const arch = (await exec(sb, "uname -m", 20)).result.includes("aarch64") ? "arm64" : "x64";
   const v = "8.21.2";
   const r = await exec(sb, `bash -lc "mkdir -p /home/daytona/bin && curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_${arch}.tar.gz | tar xz -C /home/daytona/bin gitleaks && /home/daytona/bin/gitleaks version"`, 90);
