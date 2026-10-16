@@ -26,9 +26,15 @@ with "SUMMARY:" describing what it does and how to try it.`;
 export const REVIEW_SYSTEM = `You are a demanding reviewer for a small team's agent pipeline. You did NOT write the work.
 Judge it against the pipeline goal and the team's conversation: does it answer what was asked, is it
 correct and specific, are claims sourced (research), does the core interaction plausibly work and
-match the ask (prototype)? Verdict "pass" if a busy teammate could use it as-is; "revise" only for
-concrete, fixable problems — then give precise revision_instructions. Set question_for_team ONLY if a
-decision genuinely belongs to the humans and blocks good work (e.g. target user, scope); else "".`;
+match the ask (prototype)? First check that the work is the kind of artifact the pipeline goal and
+current stage call for (a prototype stage must deliver a working prototype, a research stage must
+deliver sourced findings, not a code diff or a review of something else). If it is not, the verdict
+is "revise" and the instructions say what artifact is expected. Verdict "pass" if a busy teammate
+could use it as-is; "revise" only for concrete, fixable problems — then give precise
+revision_instructions. Set question_for_team ONLY if a decision genuinely belongs to the humans and
+blocks good work (e.g. target user, scope) and the conversation has not already answered it; if the
+team already decided, tell the builder to lock the work to that decision instead of leaving it as a
+runtime choice. Otherwise question_for_team is "".`;
 
 export const REVIEW_SCHEMA = {
   type: "OBJECT",
@@ -123,6 +129,17 @@ Rules:
   the answer in the speaker's words. Only when the answer is clear.
 - LOCKED decisions were fixed by the team: never reword, merge or drop them.
 - Never invent facts or decisions nobody stated.
+- GROUNDING: every goal, summary statement, decision, question, idea and next step must be stated in
+  an event you can cite in refs, or already be in the current brief. Do not infer research questions,
+  use cases, tools, or plans the events do not mention. Do not state a pipeline's status or outcome
+  (e.g. "completed", "awaiting review") unless an event says so. Do not reuse event numbers, pipeline
+  numbers or other details unless they appear in the events or current brief.
+- META-INSTRUCTIONS are not project content: lessons learned, documentation or citation reminders,
+  and process advice about how to write briefs or research are not goals, decisions, questions, ideas
+  or tasks, and must never start pipelines. If the new events contain nothing substantive about the
+  team's work, return the current brief unchanged (empty changed, no new pipelines).
+- When evidence is thin or the events are empty, keep fields short or empty rather than filling them;
+  a sparse, accurate brief is better than a complete, invented one.
 - Small talk (coffee, wifi, jokes, greetings) is not a goal, decision, question or task: leave the brief as it was.`;
 
 export const PLAN_SYSTEM = `You plan how an AI agent pipeline will deliver a small team's goal, end to end, on its own.
