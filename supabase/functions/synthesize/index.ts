@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
 
     const { data: events } = await sb
       .from("events")
-      .select("id, author, kind, text, image_url, created_at")
+      .select("id, author, kind, text, image_url, meta, created_at")
       .eq("room_id", room)
       .gt("id", brain.last_event_id)
       .eq("forgotten", false)
@@ -36,7 +36,8 @@ Deno.serve(async (req) => {
       .not("status", "in", "(stopped)")
       .order("id", { ascending: false })
       .limit(30);
-    const evText = (events ?? [])
+    // Huddle's own "Learned…" notes are about Huddle, not the team: leave them out of the brief.
+    const evText = (events ?? []).filter((e) => !e.meta?.lesson)
       .map((e) => `[#${e.id} ${e.author} ${e.kind}] ${(e.text ?? "").slice(0, 2000)}`)
       .join("\n");
     const pipeText = (pipes ?? []).map((p) =>
@@ -86,8 +87,11 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!updated) return json({ conflict: true });
     // Online eval: is the new brief faithful to what was said? (Arize annotation + lesson if low.)
-    if (evText) {
-      background(judgeBrief(evText, next).then((v) => recordEval({
+    // Only judge updates driven by what people said, not by Huddle's own system notes.
+    const said = (events ?? []).filter((e) => e.kind !== "system")
+      .map((e) => `[#${e.id} ${e.author} ${e.kind}] ${(e.text ?? "").slice(0, 2000)}`).join("\n");
+    if (said) {
+      background(judgeBrief(said, next).then((v) => recordEval({
         name: "faithfulness", score: v.score, room, stage: "synthesize",
         explanation: `${v.explanation}${(v.unsupported as string[] | undefined)?.length ? ` Unsupported: ${(v.unsupported as string[]).join("; ")}` : ""}`.slice(0, 900),
       })).catch((e) => console.error("faithfulness eval", e)));

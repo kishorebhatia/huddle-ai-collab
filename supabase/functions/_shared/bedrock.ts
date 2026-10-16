@@ -143,8 +143,11 @@ export async function bedrock(body: any): Promise<GeminiResult> {
   }, async (s) => {
     const res: any = await converse(modelId, payload);
     const blocks = res.output?.message?.content ?? [];
-    const tool = blocks.find((b: any) => b.toolUse)?.toolUse;
-    const text = tool ? JSON.stringify(tool.input) : blocks.map((b: any) => b.text ?? "").join("");
+    // Only our own "respond" tool carries the answer; Nova's grounding search shows up as toolUse too.
+    const tool = blocks.find((b: any) => b.toolUse?.name === "respond")?.toolUse;
+    // Nova sometimes writes its reasoning inline; keep only the answer.
+    const text = tool ? JSON.stringify(tool.input)
+      : blocks.map((b: any) => b.text ?? "").join("").replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, "").trim();
     const raw = {
       bedrock: res,
       candidates: [{ content: { parts: [{ text }] }, groundingMetadata: { groundingChunks: collectUrls(blocks).map((web) => ({ web })) } }],

@@ -94,6 +94,11 @@ async function learn(e: { name: string; score: number; explanation: string; room
     ));
   if (!lesson?.trim()) return;
   const sb = db();
+  // At most one lesson per stage every 10 minutes, and never the same one twice: low scores in a busy
+  // room must not flood the prompt.
+  const { data: recent } = await sb.from("lessons").select("text, created_at").eq("stage", e.stage).order("id", { ascending: false }).limit(20);
+  const tenMin = Date.now() - 10 * 60_000;
+  if ((recent ?? []).some((l) => Date.parse(l.created_at) > tenMin || l.text.trim().toLowerCase() === lesson.trim().toLowerCase())) return;
   await sb.from("lessons").insert({ stage: e.stage, text: lesson.trim(), eval_name: e.name, score: e.score, from_job_id: e.jobId ?? null });
   await sb.from("events").insert({
     room_id: e.room, author: "huddle", kind: "system",

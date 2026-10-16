@@ -109,7 +109,7 @@ async function verifyResearch(job: any, text: string, sources: { title: string; 
     name: "groundedness", score: v.score, explanation: v.explanation, room: job.room_id,
     jobId: job.id, pipelineId: job.pipeline_id ?? undefined, stage: "research", task: job.prompt,
   });
-  const unsupported = (v.unsupported_claims as string[] | undefined) ?? [];
+  const unsupported = Array.isArray(v.unsupported_claims) ? (v.unsupported_claims as unknown[]).map(String) : [];
   const note = `\n\n### Checked by Anchor\nRead ${pages.length} source page${pages.length > 1 ? "s" : ""} in a cloud browser. ` +
     `Groundedness ${v.score.toFixed(2)}: ${v.explanation}` +
     (unsupported.length ? `\n\nNot found in the sources:\n${unsupported.slice(0, 5).map((c) => `- ${c}`).join("\n")}` : "");
@@ -229,6 +229,8 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
         tools: [{ google_search: {} }],
         generationConfig: { thinkingConfig: { thinkingLevel: "low" } },
       }, SMART_MODEL);
+      // A brief that is empty or only echoes the search call is a failure, not a result: retry it.
+      if (text.trim().length < 200 || /^\s*\{\s*"query"/.test(text)) throw new Error("research came back empty; retrying");
       const chunks = raw?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
       const seen = new Set<string>();
       const sources = chunks
@@ -263,7 +265,9 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
         [{ text: `${userText}\n\n${work}` }], REVIEW_SCHEMA, FAST_MODEL, REVIEW_SYSTEM,
         { thinkingConfig: { thinkingLevel: "low" } },
       );
-      // Models sometimes score out of 100; keep it on the 1-10 scale the UI shows.
+      // Models sometimes return a string where a list belongs, or score out of 100.
+      for (const k of ["strengths", "issues"]) r[k] = Array.isArray(r[k]) ? r[k].map(String) : r[k] ? [String(r[k])] : [];
+      // Keep the score on the 1-10 scale the UI shows.
       r.score = Math.max(1, Math.min(10, Math.round(r.score > 10 ? r.score / 10 : r.score)));
       const md = `**${r.verdict === "pass" ? "Pass" : "Needs revision"}** · ${r.score}/10\n\n` +
         (r.strengths?.length ? `Strengths:\n${r.strengths.map((x: string) => `- ${x}`).join("\n")}\n\n` : "") +
