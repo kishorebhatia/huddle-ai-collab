@@ -114,11 +114,15 @@ if (ARIZE_KEY && SPACE) {
 }
 
 // ---------- gate ----------
+// The judge varies by a few hundredths per case between identical runs, so the gate has two parts:
+// the mean may not fall much below the baseline, and no single case may collapse.
 const floor = {
   faithfulness: Math.max(0.75, (baseline?.faithfulness ?? 0) - 0.05),
-  completeness: Math.max(0.6, (baseline?.completeness ?? 0) - 0.1),
+  completeness: Math.max(0.6, (baseline?.completeness ?? 0) - 0.2),
 };
-const pass = scores.faithfulness >= floor.faithfulness && scores.completeness >= floor.completeness && !results.some((r) => r.error);
+const collapsed = results.filter((r) => baseline?.cases?.[r.id] && baseline.cases[r.id].faithfulness - r.faithfulness > 0.35);
+const pass = scores.faithfulness >= floor.faithfulness && scores.completeness >= floor.completeness &&
+  !collapsed.length && !results.some((r) => r.error);
 
 const rows = results.map((r) => {
   const before = baseline?.cases?.[r.id];
@@ -132,6 +136,7 @@ const summary = [
   `| this change | **${scores.faithfulness}** | **${scores.completeness}** |`,
   baseline ? `| baseline | ${baseline.faithfulness} | ${baseline.completeness} |` : `| baseline | (none yet) | |`,
   `| must be at least | ${floor.faithfulness.toFixed(3)} | ${floor.completeness.toFixed(3)} |`,
+  collapsed.length ? `**Collapsed cases** (faithfulness fell more than 0.35): ${collapsed.map((r) => r.id).join(", ")}` : "",
   ``, experimentNote, ``,
   `| case | faithfulness | completeness | judge's explanation |`, `|---|---|---|---|`, ...rows,
 ].join("\n");

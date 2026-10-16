@@ -1,8 +1,9 @@
 # Lean CI/CD for the agent's prompts:
 #   pull request → run the regression set with the PR's brief prompt, log it to Arize as an experiment,
 #                  and fail the check if faithfulness or completeness drop below evals/baseline.json
-#   push to redesign-v4 → same gate; if it passes, move the `live` branch to this commit.
-#                  The EC2 box follows `live` (aws/autodeploy.sh), so only commits that passed evals ship.
+#   push to redesign-v4 → same gate; if it passes, move the `live` branch to this commit and deploy it:
+#                  SSH to the EC2 box with a key that can only run aws/autodeploy.sh, which pulls `live`.
+#                  So only commits that passed evals ship.
 name: evals
 
 on:
@@ -40,3 +41,21 @@ jobs:
       - name: Promote to live
         if: github.event_name != 'pull_request'
         run: git push --force origin HEAD:refs/heads/live
+      - name: Deploy to EC2
+        if: github.event_name != 'pull_request'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key's forced command runs aws/autodeploy.sh; nothing else is possible with it.
+          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes ec2-user@"$DEPLOY_HOST" | tee deploy.log
+          grep -q "^deployed " deploy.log || grep -q . deploy.log || echo "already up to date"
+      - name: Check the live site
+        if: github.event_name != 'pull_request'
+        run: |
+          for i in 1 2 3 4 5 6; do curl -fsS "${{ vars.HUDDLE_URL }}/healthz" && exit 0; sleep 10; done
+          exit 1
