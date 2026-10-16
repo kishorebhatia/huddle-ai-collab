@@ -26,17 +26,26 @@ export async function upload(sb: Sandbox, name: string, content: string, base = 
   await api(`${sb.toolbox}/files/upload-v2?path=${encodeURIComponent(`${base}/${name}`)}`, { method: "POST", body: fd });
 }
 
-/** Free space by deleting Huddle's oldest prototype sandbox (never the scanner, never anything not Huddle's). */
+/** Free space by archiving Huddle's oldest prototype sandbox (never the scanner, never anything not Huddle's).
+ *  Archived sandboxes keep their files and can be restored; nothing is deleted. */
 async function evictOldest(): Promise<boolean> {
   const list = await (await api(`${API}/sandbox`)).json();
   // deno-lint-ignore no-explicit-any
   const ours = ((Array.isArray(list) ? list : list.items) ?? []).filter((x: any) =>
-    x.labels?.app === "huddle" && x.labels?.role !== "secret-scan" && !["destroying", "destroyed"].includes(x.state))
+    x.labels?.app === "huddle" && x.labels?.role !== "secret-scan" && ["started", "stopped"].includes(x.state))
     .sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt));
-  if (!ours.length) return false;
-  await api(`${API}/sandbox/${ours[0].id}`, { method: "DELETE" });
-  console.log(`daytona: deleted oldest prototype sandbox ${ours[0].id} to stay under the disk limit`);
-  await sleep(4000);
+  const oldest = ours[0];
+  if (!oldest) return false;
+  if (oldest.state === "started") {
+    await api(`${API}/sandbox/${oldest.id}/stop`, { method: "POST" });
+    for (let i = 0; i < 30; i++) {
+      if ((await (await api(`${API}/sandbox/${oldest.id}`)).json()).state === "stopped") break;
+      await sleep(2000);
+    }
+  }
+  await api(`${API}/sandbox/${oldest.id}/archive`, { method: "POST" });
+  console.log(`daytona: archived oldest prototype sandbox ${oldest.id} to stay under the disk limit`);
+  await sleep(5000);
   return true;
 }
 
@@ -52,7 +61,7 @@ export async function deploySandbox(labels: Record<string, string>): Promise<San
     try {
       res = await create();
     } catch (e) {
-      // The account has a total disk cap; old prototypes make way for new ones.
+      // The account has a total disk cap; old prototypes are archived to make way for new ones.
       if (!/disk limit|concurrency|quota/i.test(String(e)) || !(await evictOldest())) throw e;
     }
   }

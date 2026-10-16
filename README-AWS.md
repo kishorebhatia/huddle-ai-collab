@@ -101,9 +101,16 @@ remove the `region` line from `~/.arize/profiles/huddle.toml`.
    cd huddle/aws && sudo docker compose -p huddle up -d
    ```
 
-4. **Deploys after that:** run `aws/autodeploy.sh` on the box. It follows the `live` branch, applies new
-   migrations, and restarts the app. To make it automatic, run it from a one-minute systemd timer; that
-   isn't installed on the demo box yet.
+4. **Deploys after that are automatic.** GitHub Actions deploys every commit that passes evals:
+   - It SSHes to the box with a key whose forced command is `aws/autodeploy.sh`. That key can't open a
+     shell or forward ports.
+   - The script pulls `live`, applies any new migrations, and restarts the app.
+   - Install the key once in `~/.ssh/authorized_keys` as:
+     `command="/home/ec2-user/huddle/aws/autodeploy.sh",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty ssh-ed25519 …`
+   - Store the private key as the `DEPLOY_SSH_KEY` secret, the host key as `DEPLOY_KNOWN_HOSTS`, and the
+     address as the `DEPLOY_HOST` variable.
+   - The security group allows port 22 from anywhere, because GitHub's runners have no fixed IPs.
+     Password login is off.
 
 Send teammates `https://<cloudfront>/?room=<anything>`.
 
@@ -125,8 +132,11 @@ credentials. Session credentials expire with the session.
 4. **Gate:** fails if mean faithfulness drops more than 0.05 below
    [evals/baseline.json](evals/baseline.json) (and never passes below 0.75), or completeness drops more
    than 0.1.
-5. **On push only, if it passed:** moves the `live` branch to the commit. Production deploys only from
-   `live`.
+5. **On push only, if it passed:** moves the `live` branch to the commit and deploys it to EC2 (see
+   Deploy). Only commits that passed evals reach production.
+6. **Gate rules:** each case runs twice and the scores are averaged. The check also fails if any
+   single case's faithfulness drops more than 0.35, which is what a bad prompt does to the "noise"
+   case.
 
 Repository settings: secrets `EVAL_TOKEN` and `ARIZE_API_KEY`; variables `HUDDLE_URL` and `ARIZE_SPACE_ID`.
 To accept a new baseline, run `deno run -A evals/run.ts --update-baseline` and commit the file.
@@ -161,6 +171,56 @@ research ──► review ──► prototype ──► review ──► [gate: 
   requests share one trace. The root span is sent when the pipeline finishes.
 - **Everything else** gets its own trace, grouped by room in Arize sessions (`session.id`).
 - Spans use OpenInference attributes, so Arize shows prompts, outputs, models and token counts.
+
+## Goal to live link, with secrets
+
+Every pipeline starts with a **plan** stage (Claude Haiku). It decides:
+- whether the deliverable is an app or research only;
+- whether to research first;
+- whether a backend is needed;
+- which keys the room must supply (`required_inputs`, e.g. `ELEVENLABS_API_KEY`);
+- what "done" means.
+
+The plan rewrites the pipeline's stages. A research pipeline whose answer says "build it too" gets the
+build stages added.
+
+**Secret gate:**
+- **Entering a key:** builds that need keys wait at a `secret` gate. The Work panel shows masked fields
+  that post to the `secrets` function, which is write-only.
+- **Storage:** keys are stored encrypted in `room_secrets`. A signed-in owner can also save them to
+  `user_secrets`, for every room they own.
+- **Use:** they reach only the build's Daytona sandbox, as `.env`.
+- **Scrubbing:** any span that contains a key's value has it replaced with `[secret]`. Keys pasted
+  into the stream or board are redacted before storage.
+
+**Builds with a backend:**
+- **Output:** the app builder writes `server.js` (Node, no dependencies, reading keys from
+  `process.env`), `public/index.html` and a README.
+- **Check and test:** Daytona runs it. `node --check` and the Anchor smoke test decide whether it
+  works. Up to two repairs use the server log and the browser's report.
+- **Smoke tester:** it's told keys are configured and hidden from it, so "not configured" counts as a
+  failure, while guessing a secret isn't expected.
+
+**Full auto:** questions become recorded assumptions. Keys and the hourly job budget
+(`rooms.max_jobs_per_hour`, default 20) still need the room.
+
+## GitHub-backed rooms
+
+1. **Sign in with GitHub** (OAuth App). The default scopes are `public_repo user:email`; `repo` is
+   requested only when a room is turned private.
+2. **Publish to GitHub** previews the exact files, then:
+   - creates the repo from `kishorebhatia/huddle-room-template`;
+   - redacts secrets (patterns, then `gitleaks` in Daytona);
+   - commits only what changed, with members as co-authors;
+   - logs a `secret_free` eval.
+3. **Private rooms** are visible only to the owner and invited GitHub users. RLS (`room_visible`)
+   guards REST; the gateway guards function calls and realtime joins.
+
+Env: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TEMPLATE`. The OAuth callback is
+`<site>/auth/github/callback`.
+
+**Next:** public rooms backed automatically by the `Huddle-public-repos` org, with no sign-in. Sign-in
+becomes needed only for private (paid) rooms.
 
 ## Using it
 
@@ -213,8 +273,6 @@ built-in `p.html` page).
   streaming.
 - **One server.** Uploads live on the instance's disk with no backups, and stopping the instance changes
   its DNS name, which breaks the CloudFront origin. The next step is S3 plus an Elastic IP.
-- **Manual deploys.** Auto-deploy from `live` runs only when `aws/autodeploy.sh` is run; the timer isn't
-  installed on the demo box.
 - **Small eval set.** The judge is an LLM and scores vary by a few hundredths between runs. Eight cases
   make a useful regression check, not proof.
 - **Anchor's free plan** limits concurrent browsers. Page reads use the sessionless Web Unlocker; smoke

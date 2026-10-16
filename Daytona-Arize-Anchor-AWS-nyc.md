@@ -12,7 +12,7 @@ Huddle runs it as a pipeline of agent stages. Each of the four platforms owns a 
 |---|---|---|---|
 | **AWS** | Runs the whole app. EC2 hosts the database, the API and the agent functions; CloudFront serves it over HTTPS. Bedrock runs the AI: Claude Haiku 4.5 for briefs and reviews, Claude Sonnet 5.5 for prototypes, and Nova 2 Lite for web-grounded research and video. | One account for the app, its data and its models. No Supabase and no Gemini key required. | **Live, tested end to end** |
 | **Anchor Browser** | A cloud browser for the agent. Research opens and reads the top source pages. After a deploy, it opens the prototype's public URL and uses it like a person would. | Research cites pages the agent actually read. Prototypes are tested by using them, not by reading their code. The room can watch the browser work live. | **Live**: groundedness 0.85–0.95 against pages read; smoke tests pass on the Daytona URL |
-| **Daytona** | A sandbox where agent-built prototypes are installed, started and given a public URL. If a build fails, its log goes back to the model for one repair. | The agent ships running apps with real links, not mockups, and it fixes its own failed builds. | **Live**: sandbox serving in about 20 s; `node --check` runs in the sandbox |
+| **Daytona** | A sandbox per build. It runs full-stack apps (a Node server plus UI) with the room's API keys as a `.env` that exists only in the sandbox, checks the code with Node, and gives a public URL. Failed builds get up to two repairs. A second sandbox runs `gitleaks` before anything is pushed to GitHub. | The agent ships working apps that call real APIs (e.g. ElevenLabs) without the key ever reaching the browser, the chat, the repo or a log. | **Live**: goal → key → working app with a backend, live in 80 s; secret found 0 times in the page, database and logs |
 | **Arize** | Traces every pipeline, stage and model call, and scores outputs with evals. Low scores become lessons the agent reuses and test cases for CI. | You can see why the agent did what it did. Quality is measured on every run, and a prompt change can't ship if it lowers the scores. | **Live**: traces, 6 eval types, lessons, CI gate |
 
 **The loop in one line:** Anchor gathers evidence → Bedrock writes → Daytona runs it → Anchor tests it
@@ -72,11 +72,26 @@ Every step is traced to Arize. Low scores become lessons and regression tests.
 - **Live view:** each browser session has a live-view link, shown on the job card.
 
 ### Daytona
-- **Build:** the agent writes a small multi-file project and a start command. Daytona creates a
-  sandbox, uploads the files, installs and starts the app, and returns a public preview URL. That URL
-  becomes the link Huddle shares.
-- **Repair:** a failed install or start sends its log back to the model for one fix and retry.
-- **Demo settings:** a longer auto-stop time so links stay up during judging, and public previews.
+- **Static prototypes:** a single HTML page is uploaded to a public sandbox and served.
+  - Node runs `node --check` on every script inside the sandbox.
+  - The sandbox URL becomes the link Huddle shares.
+- **Apps with a backend and secrets:** when the plan says a goal needs an API key (for example "use
+  ElevenLabs"), the pipeline stops at a **secret gate**.
+  1. The room enters the key in a masked field. It goes straight to a write-only function and is stored
+     encrypted. A signed-in owner can also save it for their other rooms.
+  2. The build writes `server.js` and `public/index.html`. Daytona receives the key as a `.env` that
+     exists only inside that sandbox.
+  3. The server calls the third-party API itself, so the browser, the chat, the repo, the prompts and
+     the traces never see the key.
+  - Huddle also redacts keys that people paste into the stream before storing them.
+- **Repair loop:** a failed check or smoke test sends Node's output, the server log and what the
+  browser saw back to the model. The fixed files go into the same sandbox and the app restarts, up to
+  two times. Repairs never touch the `.env`.
+- **Secret scanning:** before anything is pushed to GitHub, `gitleaks` runs over the exact files in
+  a dedicated Daytona sandbox, after Huddle's own pattern check. That sandbox is reused, so a scan
+  takes about 0.25 s.
+- **Disk limit:** at the account's 30 GiB cap, Huddle stops and **archives** its oldest prototype
+  sandbox. It never deletes one, and never touches sandboxes Huddle didn't create.
 
 ### Arize
 - **Tracing:** each pipeline is one trace. Every stage and function is a span, and every Bedrock call is
@@ -104,6 +119,21 @@ Every step is traced to Arize. Low scores become lessons and regression tests.
    lesson the last low score produced.
 6. **CI/CD:** a pull request that weakens a prompt fails its eval check, and Arize shows which examples
    got worse. The fix passes and deploys.
+
+## Goal to live link
+
+A request like "build us a voice demo with ElevenLabs" now runs end to end:
+
+1. **Plan:** decides whether to research first, whether a backend is needed, and which keys the room
+   must supply.
+2. **Secret gate:** asks for the ElevenLabs key in a masked field, if it's needed.
+3. **Build:** a server and UI, run on Daytona with the key as `.env`.
+4. **Check and test:** `node --check`, then an Anchor smoke test on the live URL, with up to two
+   repairs.
+5. **Live:** the live link appears in Agent work. Arize scores every stage.
+
+In **Full auto**, Huddle records its assumptions instead of asking. It still stops for keys and for
+the hourly job budget, which the room can approve or raise.
 
 ## Known gaps
 
