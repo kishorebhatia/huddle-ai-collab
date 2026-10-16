@@ -28,6 +28,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .slash { color: #5E7262; font-weight: 600; }
 .roombtn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; border-radius: 8px; padding: 6px 8px; color: #E7ECE2; cursor: pointer; min-height: 36px; max-width: 260px; }
 .roombtn:hover { background: #22362A; }
+.roomwrap { display: inline-flex; align-items: center; min-width: 0; }
+.roomname-btn { background: none; border: 0; border-radius: 8px; padding: 6px 8px; color: #E7ECE2; cursor: text; min-height: 36px; max-width: 240px; display: inline-flex; }
+.roomname-btn:hover { background: #22362A; }
+.roomname-btn:hover .rname { text-decoration: underline dashed #7E9283; text-underline-offset: 4px; }
+.rname-input { background: #22362A; color: #fff; border: 1.5px solid var(--sage); border-radius: 8px; padding: 0 10px; min-height: 34px; width: 240px; max-width: 46vw; font-size: 14px; font-weight: 700; }
+.rname-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(164,190,141,.35); }
+.roombtn { padding: 6px; }
 .rname { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code { font-family: "JetBrains Mono", monospace; font-size: 11px; background: #2B3F32; padding: 2px 7px; border-radius: 6px; color: #C9D8BB; }
 .people { display: flex; align-items: center; gap: 2px; margin-left: auto; }

@@ -19,10 +19,13 @@
       <span class="mark" aria-hidden="true">h</span>
       <span class="word donly">huddle</span>
       <span class="slash donly">/</span>
-      <button class="roombtn" id="roomBtn" aria-expanded="false" aria-label="Switch huddle or start a new one">
-        <span class="rname" id="roomName"></span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-      </button>
+      <span class="roomwrap">
+        <button class="roomname-btn" id="roomNameBtn" title="Click to rename this huddle" aria-label="Rename this huddle"><span class="rname" id="roomName"></span></button>
+        <input id="roomNameInput" class="rname-input" maxlength="60" autocomplete="off" aria-label="Huddle name" hidden />
+        <button class="roombtn" id="roomBtn" aria-expanded="false" aria-label="Switch huddle or start a new one">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </span>
       <span class="code donly" id="roomCode"></span>
     </div>
     <button class="vswitch donly" id="visSwitch" role="switch" aria-checked="false" aria-label="Private huddle" title="Public: anyone with the link can join">
@@ -227,14 +230,6 @@
 
 <!-- ===== Overlays ===== -->
 <div class="rmenu" id="roomMenu" role="menu" aria-label="Your huddles" hidden>
-  <div class="rename" id="renameRow" hidden>
-    <label class="lbl" for="renameInput">Name this huddle</label>
-    <div class="askrow" style="margin:0 10px 8px">
-      <input id="renameInput" class="inp" maxlength="60" autocomplete="off" />
-      <button class="btn pri sm" id="renameSave">Save</button>
-    </div>
-  </div>
-  <button class="ritem" id="renameBtn" role="menuitem"><span class="rdot" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></span><span class="grow">Rename this huddle<small>Everyone in the room sees the new name</small></span></button>
   <p class="lbl">Your huddles</p>
   <div id="roomList"></div>
   <button class="ritem new" id="newRoomBtn" role="menuitem"><span class="rdot" aria-hidden="true">+</span><span class="grow">Start a new huddle<small>Get a link to share in seconds</small></span></button>

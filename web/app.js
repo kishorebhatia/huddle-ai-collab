@@ -1150,7 +1150,7 @@ $("roomBtn").onclick = (ev) => {
   const m = $("roomMenu");
   m.hidden = !m.hidden;
   $("roomBtn").setAttribute("aria-expanded", String(!m.hidden));
-  if (!m.hidden) { renderRoomMenu(); $("renameRow").hidden = true; $("renameBtn").hidden = false; }
+  if (!m.hidden) renderRoomMenu();
 };
 document.addEventListener("click", (ev) => {
   if (!$("roomMenu").hidden && !$("roomMenu").contains(ev.target)) { $("roomMenu").hidden = true; $("roomBtn").setAttribute("aria-expanded", "false"); }
@@ -1167,23 +1167,30 @@ function renderRoomName() {
     store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
   }
 }
-$("renameBtn").onclick = (ev) => {
-  ev.stopPropagation();
-  $("renameRow").hidden = false;
-  $("renameBtn").hidden = true;
-  $("renameInput").value = roomLabel(room).startsWith("Room ") && !state.room?.name ? "" : roomLabel(room);
-  $("renameInput").placeholder = "e.g. Hackathon team, Q4 launch";
-  $("renameInput").focus();
-  $("renameInput").select();
-};
-async function saveRoomName() {
-  const name = $("renameInput").value.trim().replace(/\s+/g, " ").slice(0, 60);
-  if (!name) return toast("Give the huddle a name first.");
+// Click the room name to rename it in place. Enter or clicking away saves; Escape cancels.
+function startRename() {
   if (!me) return toast("Join the huddle first");
+  const inp = $("roomNameInput");
+  inp.value = state.room?.name || myRooms.find((r) => r.id === room)?.name || "";
+  inp.placeholder = "Name this huddle";
+  $("roomNameBtn").hidden = true;
+  inp.hidden = false;
+  inp.focus();
+  inp.select();
+}
+function endRename() {
+  $("roomNameInput").hidden = true;
+  $("roomNameBtn").hidden = false;
+}
+async function saveRoomName() {
+  const inp = $("roomNameInput");
+  if (inp.hidden) return;
+  const name = inp.value.trim().replace(/\s+/g, " ").slice(0, 60);
+  endRename();
   const before = state.room?.name ?? null;
+  if (!name || name === roomLabel(room)) return;
   state.room = { ...(state.room || { id: room }), name };
   renderRoomName();
-  $("roomMenu").hidden = true;
   const { error } = await sb.from("rooms").update({ name }).eq("id", room);
   if (error) {
     state.room = { ...state.room, name: before };
@@ -1192,11 +1199,12 @@ async function saveRoomName() {
   }
   toast(`Renamed to “${name}”. Everyone in the room sees it now.`);
 }
-$("renameSave").onclick = saveRoomName;
-$("renameInput").addEventListener("keydown", (ev) => {
+$("roomNameBtn").onclick = startRename;
+$("roomNameInput").addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") { ev.preventDefault(); saveRoomName(); }
-  if (ev.key === "Escape") { ev.stopPropagation(); $("roomMenu").hidden = true; }
+  if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); endRename(); }
 });
+$("roomNameInput").addEventListener("blur", saveRoomName);
 $("roomMenu").addEventListener("click", (ev) => ev.stopPropagation());
 
 $("newRoomBtn").onclick = () => { $("roomMenu").hidden = true; $("newRoom").hidden = false; $("newName").focus(); };
