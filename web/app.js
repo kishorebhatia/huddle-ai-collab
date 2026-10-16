@@ -1222,13 +1222,13 @@ $("createRoom").onclick = async () => {
 // Private huddles aren't built yet: the switch explains that and collects interest.
 function openUpgrade() {
   $("roomMenu").hidden = true;
-  $("upAsk").hidden = false; $("upEmail").hidden = true; $("upDone").hidden = true;
+  $("upEmail").hidden = false; $("upDone").hidden = true;
   $("upgrade").hidden = false;
+  setTimeout(() => $("upEmailInput").focus(), 50);
 }
 $("visSwitch").onclick = openUpgrade;
 $("newVis").onclick = openUpgrade;
 $("visSwitch2").onclick = openUpgrade;
-$("upYes").onclick = () => { $("upAsk").hidden = true; $("upEmail").hidden = false; $("upEmailInput").focus(); };
 function notifyMe() {
   const em = $("upEmailInput").value.trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast("Please enter a valid email.");
