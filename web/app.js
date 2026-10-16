@@ -1367,11 +1367,11 @@ async function openGitHub() {
   if (st.self) {
     body.append(h("p", {}, "This is the operator room. It's connected to Huddle's own code: ",
       h("a", { href: st.repo.html_url, target: "_blank", rel: "noopener" }, `github.com/${st.repo.owner}/${st.repo.name}`), ` (branch ${st.repo.branch}).`),
-      h("p", { class: "muted small" }, "Ask for a change in the room. Huddle edits its prompts, type-checks them in Daytona, has the change reviewed, and opens a pull request. CI runs the evals on it; in Full auto Huddle merges it when they pass, which deploys it. Otherwise you merge it."));
-    return;
+      h("p", { class: "muted small" }, "Ask for a change in the room. Huddle edits its prompts, type-checks them in Daytona, has the change reviewed, and opens a pull request. CI runs the evals on it; in Full auto Huddle merges it when they pass, which deploys it. Otherwise you merge it."),
+      st.is_owner ? h("p", { class: "hint" }, "Members can ask for changes to Huddle; their pull requests open under your GitHub account, so invite only people you trust with that.") : null);
   }
   const priv = st.visibility === "private";
-  body.append(h("p", {},
+  if (!st.self) body.append(h("p", {},
     st.repo ? h("span", {}, "Backed by ", h("a", { href: st.repo.html_url, target: "_blank", rel: "noopener" }, `github.com/${st.repo.owner}/${st.repo.name}`),
       st.repo.pages_url ? h("span", {}, " · ", h("a", { href: st.repo.pages_url, target: "_blank", rel: "noopener" }, "GitHub Pages")) : null)
       : st.org_mode && !priv ? `Not saved yet. The first finished research or build creates github.com/${st.org}/<name>-${room}, or save now.`
@@ -1389,6 +1389,7 @@ async function openGitHub() {
       } }, "Invite")));
     }
   }
+  if (st.self) return; // the operator room ships through pull requests, not publishing
   if (!canEdit) { body.append(h("p", { class: "muted small" }, `Only @${st.owner.login} can publish this huddle.`)); return; }
   const name = h("input", { class: "inp", value: st.repo?.name || (state.room?.name || `huddle-${room}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), "aria-label": "Repository name", disabled: !!st.repo || st.org_mode });
   const tr = h("input", { type: "checkbox", id: "ghTranscript" });
