@@ -1300,7 +1300,8 @@ function openUpgrade() {
 // With GitHub sign-in configured, the switch really makes the huddle (and its repository) private.
 async function toggleVisibility() {
   if (!config.GITHUB_SIGNIN) return openUpgrade();
-  if (!auth.token) return signIn("private");
+  // Org-backed rooms only need you to sign in (to own the room); personal repos also need private-repo access.
+  if (!auth.token) return signIn(config.GITHUB_ORG ? "" : "private");
   const to = state.room?.visibility === "private" ? "public" : "private";
   try {
     let r = await fn("github", { room, action: "visibility", visibility: to });
@@ -1328,22 +1329,29 @@ $("visSwitch2").onclick = toggleVisibility;
 
 // ---------- GitHub: sign in, back the room with a repository, publish ----------
 function renderGhButton() {
-  if (!config.GITHUB_SIGNIN) return;
+  if (!config.GITHUB_SIGNIN && !config.GITHUB_ORG) return;
+  const priv = state.room?.visibility === "private";
   $("ghBtn").hidden = false;
-  $("ghLabel").textContent = !auth.token ? "Sign in with GitHub" : state.room?.repo ? "GitHub repo" : "Publish to GitHub";
+  $("ghLabel").textContent = state.room?.repo ? (priv ? "Private repo" : "Public repo")
+    : config.GITHUB_ORG && !priv ? "Save to GitHub" : !auth.token ? "Sign in with GitHub" : "Publish to GitHub";
+  $("ghBtn").title = state.room?.repo ? `github.com/${state.room.repo.owner}/${state.room.repo.name}` : "Back this huddle with its own GitHub repository";
 }
 async function openGitHub() {
   const body = $("ghBody");
   body.innerHTML = "";
   $("gh").hidden = false;
-  if (!auth.token) {
+  const orgPublic = config.GITHUB_ORG && state.room?.visibility !== "private";
+  if (!auth.token && !orgPublic) {
     body.append(h("p", {}, "Sign in with GitHub to back this huddle with its own repository. Huddle writes the brief, decisions, research and the code it built there, with secrets removed."),
       h("p", { class: "muted small" }, "Repositories are public unless you turn on Private. Huddle asks for access to private repositories only when you do."),
       h("div", { class: "crow" }, h("button", { class: "btn pri", onclick: () => signIn() }, "Sign in with GitHub")));
     return;
   }
-  body.append(h("p", { class: "muted small" }, `Signed in as @${auth.user?.login}. `,
-    h("button", { class: "link", onclick: () => { store.del("huddle:token"); store.del("huddle:user"); location.reload(); } }, "Sign out")));
+  body.append(auth.token
+    ? h("p", { class: "muted small" }, `Signed in as @${auth.user?.login}. `,
+      h("button", { class: "link", onclick: () => { store.del("huddle:token"); store.del("huddle:user"); location.reload(); } }, "Sign out"))
+    : h("p", { class: "muted small" }, `This huddle is public, so Huddle saves its brief, research and builds to the ${config.GITHUB_ORG} organization on GitHub as it works. No sign-in needed. `,
+      h("button", { class: "link", onclick: () => signIn() }, "Sign in"), " to make it private."));
   const wait = h("p", { class: "muted" }, "Loading…");
   body.append(wait);
   let st;
@@ -1353,10 +1361,11 @@ async function openGitHub() {
   body.append(h("p", {},
     st.repo ? h("span", {}, "Backed by ", h("a", { href: st.repo.html_url, target: "_blank", rel: "noopener" }, `github.com/${st.repo.owner}/${st.repo.name}`),
       st.repo.pages_url ? h("span", {}, " · ", h("a", { href: st.repo.pages_url, target: "_blank", rel: "noopener" }, "GitHub Pages")) : null)
+      : st.org_mode && !priv ? `Not saved yet. The first finished research or build creates github.com/${st.org}/<name>-${room}, or save now.`
       : "Not backed by a repository yet. Publishing creates one in your account from the Huddle template.",
     h("br"), h("span", { class: "muted small" },
       `${priv ? "Private" : "Public"} · ${st.owner ? `owner @${st.owner.login}` : "no owner yet (publishing makes you the owner)"}`)));
-  const canEdit = st.is_owner || !st.owner;
+  const canEdit = (st.org_mode && !priv) || st.is_owner || !st.owner;
   if (priv) {
     body.append(h("p", { class: "lab" }, "Members"), h("p", { class: "small" }, (st.members || []).map((m) => `@${m.login}${m.role === "owner" ? " (owner)" : m.user_id ? "" : " (invited)"}`).join(", ") || "Only you"));
     if (st.is_owner) {
@@ -1368,7 +1377,7 @@ async function openGitHub() {
     }
   }
   if (!canEdit) { body.append(h("p", { class: "muted small" }, `Only @${st.owner.login} can publish this huddle.`)); return; }
-  const name = h("input", { class: "inp", value: st.repo?.name || (state.room?.name || `huddle-${room}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), "aria-label": "Repository name", disabled: !!st.repo });
+  const name = h("input", { class: "inp", value: st.repo?.name || (state.room?.name || `huddle-${room}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), "aria-label": "Repository name", disabled: !!st.repo || st.org_mode });
   const tr = h("input", { type: "checkbox", id: "ghTranscript" });
   const out = h("div", { class: "ghfiles" });
   const pub = h("button", { class: "btn pri", disabled: true }, "Publish");

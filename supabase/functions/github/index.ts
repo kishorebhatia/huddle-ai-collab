@@ -11,6 +11,13 @@ import { recordEval } from "../_shared/evals.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const TEMPLATE = Deno.env.get("GITHUB_TEMPLATE") ?? "kishorebhatia/huddle-room-template";
+// Public rooms: one repository per room in this org, created and written with the org's token (no sign-in).
+const ORG = Deno.env.get("GITHUB_ORG");
+const ORG_TOKEN = Deno.env.get("GITHUB_ORG_TOKEN");
+const ORG_MODE = !!(ORG && ORG_TOKEN);
+const ORG_TEMPLATE = Deno.env.get("GITHUB_ORG_TEMPLATE") ?? `${ORG}/huddle-room-template`;
+// deno-lint-ignore no-explicit-any
+const locks: Set<string> = ((globalThis as any).__huddlePublishLocks ??= new Set<string>());
 const SITE = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
 
 // deno-lint-ignore no-explicit-any
@@ -135,48 +142,75 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const who = await caller(req);
-    if (!who.uid) return json({ error: "Sign in with GitHub first", need_signin: true }, 401);
     const body = await req.json().catch(() => ({}));
     const { room: roomId, action } = body;
     if (!roomId || !action) return json({ error: "room and action required" }, 400);
     const sb = db();
-    const { data: user } = await sb.from("users").select("*").eq("id", who.uid).single();
-    if (!user) return json({ error: "unknown user; sign in again", need_signin: true }, 401);
+    const { data: user } = who.uid ? await sb.from("users").select("*").eq("id", who.uid).maybeSingle() : { data: null };
+    if (who.uid && !user) return json({ error: "unknown user; sign in again", need_signin: true }, 401);
     await sb.from("rooms").upsert({ id: roomId }, { onConflict: "id", ignoreDuplicates: true });
     let { data: room } = await sb.from("rooms").select("*").eq("id", roomId).single();
-    const isOwner = room.owner_id === user.id;
     const { data: members } = await sb.from("room_members").select("login, role, user_id").eq("room_id", roomId);
-    const isMember = isOwner || (members ?? []).some((m: Any) => m.user_id === user.id);
-    if (room.visibility === "private" && !isMember) return json({ error: "This huddle is private" }, 403);
+    const isOwner = !!user && room.owner_id === user.id;
+    const isMember = isOwner || (!!user && (members ?? []).some((m: Any) => m.user_id === user.id));
+    if (room.visibility === "private" && !isMember && !who.service) return json({ error: "This huddle is private" }, 403);
+    // Public rooms are backed by the org with no sign-in. Signing in is for private rooms (and their settings).
+    const settings = action === "visibility" || action === "invite";
+    if ((settings || room.visibility === "private" || !ORG_MODE) && !user && !who.service) {
+      return json({ error: "Sign in with GitHub first", need_signin: true }, 401);
+    }
 
     if (action === "status") {
       const { data: owner } = room.owner_id ? await sb.from("users").select("login, avatar_url").eq("id", room.owner_id).single() : { data: null };
-      return json({ owner, visibility: room.visibility, repo: room.repo, members, is_owner: isOwner, private_ok: user.scopes.split(",").includes("repo") });
+      return json({ org_mode: ORG_MODE, org: ORG, owner, visibility: room.visibility, repo: room.repo, members, is_owner: isOwner, signed_in: !!user });
     }
 
-    // Everything below changes the room: owner only (an unowned room is claimed by whoever acts first).
-    if (room.owner_id && !isOwner) {
-      const { data: owner } = await sb.from("users").select("login").eq("id", room.owner_id).single();
-      return json({ error: `Only @${owner?.login} can change this huddle's GitHub settings` }, 403);
+    if (settings || (room.visibility === "private" && !who.service)) {
+      // Changing a room: owner only (an unowned room is claimed by the first signed-in person to act).
+      if (room.owner_id && !isOwner) {
+        const { data: owner } = await sb.from("users").select("login").eq("id", room.owner_id).single();
+        return json({ error: `Only @${owner?.login} can change this huddle's GitHub settings` }, 403);
+      }
+      if (!room.owner_id && user) {
+        await sb.from("rooms").update({ owner_id: user.id }).eq("id", roomId);
+        await sb.from("room_members").upsert({ room_id: roomId, login: user.login, user_id: user.id, role: "owner" });
+        room = { ...room, owner_id: user.id };
+      }
     }
-    if (!room.owner_id) {
-      await sb.from("rooms").update({ owner_id: user.id }).eq("id", roomId);
-      await sb.from("room_members").upsert({ room_id: roomId, login: user.login, user_id: user.id, role: "owner" });
-      room = { ...room, owner_id: user.id };
+
+    // Org repos use the org's token; repos made in someone's own account (before org mode) use the owner's.
+    const repoOwner: string = room.repo?.owner ?? (ORG_MODE ? ORG! : user!.login);
+    const useOrg = ORG_MODE && repoOwner === ORG;
+    let token = useOrg ? ORG_TOKEN! : "";
+    if (!token) {
+      const { data: owner } = room.owner_id ? await sb.from("users").select("token_enc").eq("id", room.owner_id).maybeSingle() : { data: user };
+      token = owner?.token_enc ? await decryptSecret(owner.token_enc) : "";
     }
-    const token = user.token_enc ? await decryptSecret(user.token_enc) : "";
+    if (!token) return json({ error: "Sign in with GitHub first", need_signin: true }, 401);
     const api = gh(token);
+    const addCollaborators = async (repo: Any) => {
+      const { data: ms } = await sb.from("room_members").select("login, role").eq("room_id", roomId);
+      for (const m of ms ?? []) {
+        if (!useOrg && m.login.toLowerCase() === repoOwner.toLowerCase()) continue;
+        await api(`/repos/${repo.owner}/${repo.name}/collaborators/${m.login}`, {
+          method: "PUT", body: JSON.stringify({ permission: m.role === "owner" ? "admin" : "push" }),
+        }).catch((e) => console.warn("collaborator", e));
+      }
+    };
 
     if (action === "visibility") {
       const vis = body.visibility === "private" ? "private" : "public";
-      if (vis === "private" && !user.scopes.split(",").includes("repo")) return json({ need_scope: "private" });
+      if (vis === "private" && !useOrg && !user.scopes.split(",").includes("repo")) return json({ need_scope: "private" });
       if (room.repo?.name) {
         if (vis === "public" && !body.confirm_public) return json({ confirm_public: true, repo: room.repo });
         await api(`/repos/${room.repo.owner}/${room.repo.name}`, { method: "PATCH", body: JSON.stringify({ private: vis === "private" }) });
+        if (vis === "private") await addCollaborators(room.repo);
       }
       await sb.from("rooms").update({ visibility: vis, repo: room.repo ? { ...room.repo, private: vis === "private" } : null }).eq("id", roomId);
       await sb.from("events").insert({ room_id: roomId, author: "huddle", kind: "system",
-        text: vis === "private" ? `@${user.login} made this huddle private. Only invited GitHub users can open it.` : `@${user.login} made this huddle public.` });
+        text: vis === "private"
+          ? `@${user.login} made this huddle private. Only invited GitHub users can open it${room.repo ? `, and its repository is now private` : ""}.`
+          : `@${user.login} made this huddle public.` });
       return json({ visibility: vis });
     }
 
@@ -195,14 +229,27 @@ Deno.serve(async (req) => {
     }
 
     if (action === "preview" || action === "publish") {
+      // Automatic saves wait until the room has made something worth a repository.
+      if (body.auto) {
+        const { count } = await sb.from("jobs").select("id", { count: "exact", head: true }).eq("room_id", roomId)
+          .eq("status", "done").in("kind", ["research", "prototype"]);
+        if (!count) return json({ skipped: "nothing to publish yet" });
+      }
+      if (action === "publish") {
+        if (locks.has(roomId)) return json({ skipped: "a publish is already running" });
+        locks.add(roomId);
+      }
+      try {
       const raw = await buildFiles(sb, room, { transcript: !!body.transcript });
       const scanned = await scan(raw);
-      const repoName = room.repo?.name ?? slug(body.name || room.name || `huddle-${roomId}`, 60);
+      const repoName = room.repo?.name ?? (useOrg
+        ? `${slug(room.name || "huddle", 40)}-${slug(roomId, 24)}` // unique per room inside the org
+        : slug(body.name || room.name || `huddle-${roomId}`, 60));
       const { data: known } = await sb.from("repo_files").select("path, sha256").eq("room_id", roomId);
       const prev = new Map((known ?? []).map((f: Any) => [f.path, f.sha256]));
       const hashes = Object.fromEntries(await Promise.all(Object.entries(scanned.files).map(async ([p, t]) => [p, await sha256(t)])));
       const changed = Object.keys(scanned.files).filter((p) => prev.get(p) !== hashes[p]);
-      const target = { owner: room.repo?.owner ?? user.login, name: repoName, private: room.visibility === "private", exists: !!room.repo };
+      const target = { owner: repoOwner, name: repoName, private: room.visibility === "private", exists: !!room.repo };
 
       if (action === "preview") {
         return json({
@@ -218,9 +265,9 @@ Deno.serve(async (req) => {
         let created: Any = null;
         for (const name of [repoName, `${repoName}-${roomId}`.slice(0, 90)]) {
           try {
-            created = await api(`/repos/${TEMPLATE}/generate`, {
+            created = await api(`/repos/${useOrg ? ORG_TEMPLATE : TEMPLATE}/generate`, {
               method: "POST",
-              body: JSON.stringify({ owner: user.login, name, private: target.private, description: `Huddle room: ${room.name || roomId}` }),
+              body: JSON.stringify({ owner: repoOwner, name, private: target.private, description: `Huddle room: ${room.name || roomId}${SITE ? ` · ${SITE}/?room=${roomId}` : ""}` }),
             });
             break;
           } catch (e) {
@@ -239,11 +286,7 @@ Deno.serve(async (req) => {
             .catch((e) => (console.warn("pages", e), null));
           repo.pages_url = pages?.html_url ?? null;
         }
-        for (const m of members ?? []) {
-          if (repo.private && m.login.toLowerCase() !== user.login.toLowerCase()) {
-            await api(`/repos/${repo.owner}/${repo.name}/collaborators/${m.login}`, { method: "PUT", body: JSON.stringify({ permission: "push" }) }).catch(() => null);
-          }
-        }
+        if (repo.private) await addCollaborators(repo);
       }
       const base = `/repos/${repo.owner}/${repo.name}`;
       const ref = await api(`${base}/git/ref/heads/main`);
@@ -253,9 +296,12 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ base_tree: parent.tree.sha, tree: changed.map((path) => ({ path, mode: "100644", type: "blob", content: scanned.files[path] })) }),
       });
       // Credit everyone in the room who signed in with GitHub.
-      const { data: people } = await sb.from("users").select("github_id, login, name").in("id", [user.id, ...(members ?? []).map((m: Any) => m.user_id).filter(Boolean)]);
+      const ids = [user?.id, ...(members ?? []).map((m: Any) => m.user_id)].filter(Boolean);
+      const { data: people } = ids.length ? await sb.from("users").select("github_id, login, name").in("id", ids) : { data: [] };
       const noreply = (u: Any) => `${u.github_id}+${u.login}@users.noreply.github.com`;
-      const trailers = (people ?? []).filter((p: Any) => p.login !== user.login).map((p: Any) => `Co-authored-by: ${p.name || p.login} <${noreply(p)}>`);
+      const trailers = (people ?? []).filter((p: Any) => p.login !== user?.login).map((p: Any) => `Co-authored-by: ${p.name || p.login} <${noreply(p)}>`);
+      // Signed-in publishers author their commits; automatic saves are authored by Huddle.
+      const author = user ? { name: user.name || user.login, email: noreply(user) } : { name: "Huddle", email: "huddle-bot@users.noreply.github.com" };
       const commit = await api(`${base}/git/commits`, {
         method: "POST",
         body: JSON.stringify({
@@ -263,7 +309,7 @@ Deno.serve(async (req) => {
             (scanned.findings.length ? `\n\n${scanned.findings.length} secret(s) redacted before publishing.` : "") +
             (trailers.length ? `\n\n${trailers.join("\n")}` : ""),
           tree: tree.sha, parents: [ref.object.sha],
-          author: { name: user.name || user.login, email: noreply(user), date: new Date().toISOString() },
+          author: { ...author, date: new Date().toISOString() },
         }),
       });
       await api(`${base}/git/refs/heads/main`, { method: "PATCH", body: JSON.stringify({ sha: commit.sha }) });
@@ -280,11 +326,14 @@ Deno.serve(async (req) => {
       });
       await sb.from("events").insert({
         room_id: roomId, author: "huddle", kind: "system",
-        text: `@${user.login} published ${changed.length} file${changed.length > 1 ? "s" : ""} to ${repo.html_url} (commit ${commit.sha.slice(0, 7)})` +
+        text: `${user ? `@${user.login} published` : "Saved"} ${changed.length} file${changed.length > 1 ? "s" : ""} to ${repo.html_url} (commit ${commit.sha.slice(0, 7)})` +
           (scanned.findings.length ? `. Redacted ${scanned.findings.length} secret(s) first.` : "."),
         meta: { github: true, commit: commit.sha },
       });
       return json({ repo, commit: commit.sha, html_url: `${repo.html_url}/commit/${commit.sha}`, changed, findings: scanned.findings, note: scanned.note });
+      } finally {
+        locks.delete(roomId);
+      }
     }
     return json({ error: `unknown action ${action}` }, 400);
   } catch (e) {

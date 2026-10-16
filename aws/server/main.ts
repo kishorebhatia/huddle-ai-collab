@@ -354,7 +354,9 @@ async function handle(req: Request): Promise<Response> {
         // No Gemini key → no server speech model; browsers transcribe with their own speech recognition.
         `export const SPEECH = ${JSON.stringify(env("GEMINI_API_KEY") ? "server" : "browser")};\n` +
         `export const ARIZE_PROJECT_URL = ${JSON.stringify(env("ARIZE_PROJECT_URL"))};\n` +
-        `export const GITHUB_SIGNIN = ${JSON.stringify(!!env("GITHUB_CLIENT_ID"))};\n`,
+        `export const GITHUB_SIGNIN = ${JSON.stringify(!!env("GITHUB_CLIENT_ID"))};\n` +
+        // Public rooms are saved to this org with no sign-in.
+        `export const GITHUB_ORG = ${JSON.stringify(env("GITHUB_ORG_TOKEN") ? env("GITHUB_ORG") : "")};\n`,
       { headers: { "content-type": "text/javascript", "cache-control": "no-store" } },
     );
   }

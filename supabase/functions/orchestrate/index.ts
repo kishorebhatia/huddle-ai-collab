@@ -83,6 +83,8 @@ async function advance(sb: SupabaseClient, p: any, s: number, room: Room) {
       `Done: ${p.title}${p.host_url ? ` — live at ${p.host_url}` : ""}`,
       { pipeline_id: p.id },
     );
+    // Every finished pipeline is saved to the room's GitHub repository (created on the first one).
+    invokeFn("github", { room: p.room_id, action: "publish", auto: true }).catch((e) => console.warn("auto publish", e));
     return;
   }
   // A build that needs keys waits for the room to supply them (in every mode: nobody can guess a key).
