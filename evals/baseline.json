@@ -1,39 +1,39 @@
 {
-  "faithfulness": 0.881,
-  "completeness": 1,
-  "label": "baseline",
-  "at": "2026-10-16T16:35:14.269Z",
+  "faithfulness": 0.92,
+  "completeness": 0.906,
+  "label": "baseline-v2-smalltalk-rule",
+  "at": "2026-10-16T17:23:25.690Z",
   "cases": {
     "decision-and-question": {
-      "faithfulness": 0.85,
+      "faithfulness": 0.875,
       "completeness": 1
     },
     "still-exploring": {
-      "faithfulness": 0.95,
+      "faithfulness": 1,
       "completeness": 1
     },
     "reversal": {
-      "faithfulness": 0.85,
-      "completeness": 1
+      "faithfulness": 0.835,
+      "completeness": 0.75
     },
     "owners-and-next-steps": {
-      "faithfulness": 0.95,
+      "faithfulness": 0.975,
       "completeness": 1
     },
     "numbers-exact": {
-      "faithfulness": 0.85,
+      "faithfulness": 0.8999999999999999,
       "completeness": 1
     },
     "noise": {
-      "faithfulness": 0.95,
-      "completeness": 1
+      "faithfulness": 0.875,
+      "completeness": 0.5
     },
     "agent-request": {
-      "faithfulness": 0.75,
+      "faithfulness": 1,
       "completeness": 1
     },
     "disagreement": {
-      "faithfulness": 0.9,
+      "faithfulness": 0.8999999999999999,
       "completeness": 1
     }
   }

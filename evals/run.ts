@@ -43,9 +43,19 @@ async function runCase(c: Case): Promise<Result> {
   throw new Error("unreachable");
 }
 
-// Four at a time keeps CI under a minute without hammering the model.
+// Each case runs twice and the scores are averaged: the judge varies between identical runs.
+const REPEAT = Number(Deno.env.get("EVAL_REPEAT") ?? 2);
+async function runCaseAvg(c: Case): Promise<Result> {
+  const runs = await Promise.all(Array.from({ length: REPEAT }, () => runCase(c)));
+  const ok = runs.filter((r) => !r.error);
+  if (!ok.length) return runs[0];
+  const avg = (k: "faithfulness" | "completeness") => ok.reduce((a, r) => a + r[k], 0) / ok.length;
+  const worst = ok.reduce((a, r) => (r.faithfulness < a.faithfulness ? r : a));
+  return { ...worst, faithfulness: avg("faithfulness"), completeness: avg("completeness") };
+}
+// Four cases at a time keeps CI around a minute without hammering the model.
 const results: Result[] = [];
-for (let i = 0; i < cases.length; i += 4) results.push(...await Promise.all(cases.slice(i, i + 4).map(runCase)));
+for (let i = 0; i < cases.length; i += 4) results.push(...await Promise.all(cases.slice(i, i + 4).map(runCaseAvg)));
 
 const mean = (k: "faithfulness" | "completeness") => results.reduce((a, r) => a + r[k], 0) / results.length;
 const scores = { faithfulness: +mean("faithfulness").toFixed(3), completeness: +mean("completeness").toFixed(3) };

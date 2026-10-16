@@ -118,4 +118,5 @@ Rules:
   "target hackathon teams", "stop that one"), return pipeline_id, decision (approve | skip | stop) and
   the answer in the speaker's words. Only when the answer is clear.
 - LOCKED decisions were fixed by the team: never reword, merge or drop them.
-- Never invent facts or decisions nobody stated.`;
+- Never invent facts or decisions nobody stated.
+- Small talk (coffee, wifi, jokes, greetings) is not a goal, decision, question or task: leave the brief as it was.`;
