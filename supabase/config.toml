@@ -36,3 +36,6 @@ verify_jwt = false
 
 [functions.github]
 verify_jwt = false
+
+[functions.secrets]
+verify_jwt = false

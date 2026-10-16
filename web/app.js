@@ -690,9 +690,56 @@ async function runJob(id) {
 }
 const jobsOf = (pid) => [...state.jobs.values()].filter((j) => j.pipeline_id === pid);
 
+// A build needs keys: masked fields that post straight to the secrets function (never into the stream).
+// Cached per gate so the frequent re-renders of this panel don't wipe what someone is typing.
+const secretForms = new Map();
+function secretForm(p) {
+  const key = `${p.id}:${p.gate.stage}`;
+  if (secretForms.has(key)) return secretForms.get(key);
+  const inputs = p.gate.inputs || [];
+  const wrap = h("div", { class: "secretform" });
+  const fields = inputs.map((i) => {
+    const inp = h("input", { class: "inp", type: "password", autocomplete: "off", spellcheck: "false", placeholder: i.name, "aria-label": i.label });
+    const useSaved = h("button", { class: "btn ghost sm", hidden: true, onclick: async () => {
+      try { await fn("secrets", { room, action: "use_saved", name: i.name }); inp.value = ""; inp.placeholder = "Using your saved key"; inp.disabled = true; }
+      catch (e) { toast(e.message); }
+    } }, "Use my saved key");
+    wrap.append(h("label", { class: "small lab" }, i.label, i.get_url ? h("a", { href: i.get_url, target: "_blank", rel: "noopener" }, " · get one ↗") : null),
+      h("div", { class: "crow" }, inp, useSaved), i.why ? h("p", { class: "hint" }, `Used ${i.why.replace(/^to /, "to ")}.`) : null);
+    return { i, inp, useSaved };
+  });
+  const save = auth.token ? h("input", { type: "checkbox", checked: true, id: `save${p.id}` }) : null;
+  const go = h("button", { class: "btn amber sm" }, "Save and continue");
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      for (const f of fields) {
+        const v = f.inp.value.trim();
+        if (v) await fn("secrets", { room, action: "set", name: f.i.name, value: v, save: !!save?.checked });
+        f.inp.value = "";
+      }
+      const r = await fn("orchestrate", { pipeline_id: p.id, action: "approve" });
+      if (r?.missing?.length) toast(`Still needed: ${r.missing.join(", ")}`);
+      else { secretForms.delete(key); toast("Saved. The build continues."); }
+    } catch (e) { toast(e.message); }
+    go.disabled = false;
+  };
+  wrap.append(
+    save ? h("label", { class: "small crow", for: `save${p.id}` }, save, "Also save to my account for my other huddles")
+      : h("p", { class: "hint" }, "Signed in? Keys can be saved to your account and reused in huddles you own."),
+    h("div", { class: "crow" }, go, h("button", { class: "btn ghost sm", onclick: () => pipeAct(p.id, "skip") }, "Skip this build")),
+    h("p", { class: "hint" }, "Encrypted, used only by this build's sandbox, never shown in the room, the repo or the logs."));
+  if (auth.token) {
+    fn("secrets", { room, action: "status", names: inputs.map((i) => i.name) })
+      .then((st) => fields.forEach((f) => { if (st.saved?.includes(f.i.name)) f.useSaved.hidden = false; })).catch(() => {});
+  }
+  secretForms.set(key, wrap);
+  return wrap;
+}
+
 // What each integration did for a pipeline: Anchor (live view, screenshot), Daytona (sandbox URL),
 // Arize (eval scores, trace). Only shows on deploys that have them (AWS build).
-const EVAL_LABEL = { groundedness: "Grounded", review_score: "Review", smoke_test: "Smoke test", build_success: "Build", faithfulness: "Faithful" };
+const EVAL_LABEL = { groundedness: "Grounded", review_score: "Review", smoke_test: "Smoke test", build_success: "Build", faithfulness: "Faithful", secret_free: "No secrets" };
 function proofRow(p) {
   const metas = jobsOf(p.id).map((j) => j.meta || {});
   const pick = (k) => metas.map((m) => m[k]).filter(Boolean).pop();
@@ -770,6 +817,8 @@ function renderWork() {
       row.append(inp, h("button", { class: "btn amber sm", onclick: send }, "Answer"),
         h("button", { class: "btn ghost sm", onclick: () => pipeAct(p.id, "skip") }, "Use your judgment"));
       card.append(row, h("p", { class: "hint" }, "Or just answer out loud. Huddle will match it to this question."));
+    } else if (p.gate.kind === "secret") {
+      card.append(secretForm(p));
     } else if (p.gate.kind === "publish") {
       const out = jobsOf(p.id).filter((j) => j.status === "done" && j.kind === "prototype").pop();
       row.append(h("button", { class: "btn amber sm", onclick: () => pipeAct(p.id, "approve") }, "Publish"),

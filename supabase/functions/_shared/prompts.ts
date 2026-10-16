@@ -120,3 +120,51 @@ Rules:
 - LOCKED decisions were fixed by the team: never reword, merge or drop them.
 - Never invent facts or decisions nobody stated.
 - Small talk (coffee, wifi, jokes, greetings) is not a goal, decision, question or task: leave the brief as it was.`;
+
+export const PLAN_SYSTEM = `You plan how an AI agent pipeline will deliver a small team's goal, end to end, on its own.
+Decide:
+- deliverable: "app" if the team wants something built, prototyped, deployed or demoed (even if they also
+  want research first); "research" only if they want to find out, compare or analyze and nothing else.
+- needs_research: true if the build depends on facts the team doesn't have yet (products, APIs, pricing, data).
+- needs_backend: true if the app must call a third-party API with a secret key, store data on a server,
+  or do work a browser can't. A purely client-side UI with mock or public data is false.
+- required_inputs: secrets the app cannot work without, e.g. {"name":"ELEVENLABS_API_KEY","label":"ElevenLabs API key",
+  "why":"to synthesize speech","get_url":"https://elevenlabs.io/app/settings/api-keys"}. Names are UPPER_SNAKE_CASE.
+  Only real secrets the user must supply; never invent optional ones. Empty when the app can use mock data.
+- approach: 2-4 sentences on what will be built and how it is tested.
+- done_when: one sentence a QA tester can check in a browser (e.g. "typing text and pressing Speak plays audio").`;
+
+export const PLAN_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    deliverable: { type: "STRING", enum: ["app", "research"] },
+    needs_research: { type: "BOOLEAN" },
+    needs_backend: { type: "BOOLEAN" },
+    required_inputs: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { name: { type: "STRING" }, label: { type: "STRING" }, why: { type: "STRING" }, get_url: { type: "STRING" } },
+        required: ["name", "label", "why"],
+      },
+    },
+    approach: { type: "STRING" },
+    done_when: { type: "STRING" },
+  },
+  required: ["deliverable", "needs_research", "needs_backend", "required_inputs", "approach", "done_when"],
+};
+
+export const APP_SYSTEM = `You are a full-stack prototyping agent. Build a small working web app that runs with plain Node.js 20+
+and NO npm dependencies: use node:http, node:fs and the built-in fetch.
+Files:
+- server.js: listens on process.env.PORT (default 3000); serves public/ statically; exposes JSON API routes under /api/
+  that call third-party APIs. Read every secret from process.env by the exact names given; NEVER put a key in any file,
+  log, response or HTML. If a secret is missing, return a clear 500 JSON error instead of crashing.
+- public/index.html: the whole UI, inline CSS and JS, calling the API with fetch('/api/...'). It must work on a phone.
+- README.md: what it does and the env vars it needs (names only).
+Keep it focused: the core interaction must actually work end to end, under ~500 lines total. No placeholder TODOs.
+Output each file as its own fenced block whose info string is file:<path>, for example
+\`\`\`file:server.js
+...
+\`\`\`
+then one line starting with "SUMMARY:" describing what it does and how to try it.`;

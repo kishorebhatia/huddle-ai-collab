@@ -12,6 +12,7 @@ import { serveDir } from "jsr:@std/http@1.0.12/file-server";
 import { clip, emitSpan, pipelineCtx, span, type Ctx } from "../../supabase/functions/_shared/trace.ts";
 import { caller } from "../../supabase/functions/_shared/auth.ts";
 import { handleAuth } from "./auth.ts";
+import { redactPatterns } from "../../supabase/functions/_shared/secrets.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
 const PORT = Number(env("PORT", "8080"));
@@ -256,6 +257,7 @@ async function traced(name: string, req: Request, h: Handler): Promise<Response>
   const input = { ...body };
   if (typeof input.audio === "string") input.audio = `[${input.audio.length} chars of audio]`;
   if (typeof input.system === "string") input.system = clip(input.system, 2000);
+  if ("value" in input) input.value = "[secret]"; // the secrets function: never trace a key
   return await span(`fn.${name}`, "CHAIN", { "input.value": clip(input), "input.mime_type": "application/json", "user.id": body.author, metadata: { function: name } }, async (s) => {
     const res = await h(req);
     s.set({ "output.value": clip(await res.clone().text().catch(() => ""), 4000), "output.mime_type": "application/json", "http.status_code": res.status });
@@ -283,11 +285,27 @@ async function pipelineRoot(p: Record<string, unknown>) {
 }
 
 // ---------- http ----------
+// Keys pasted into the stream or the board are redacted before they are stored, so they never reach
+// the brief, a prompt, a trace or a repository.
+// deno-lint-ignore no-explicit-any
+function redactDeep(v: any): any {
+  if (typeof v === "string") return redactPatterns({ v }).files.v;
+  if (Array.isArray(v)) return v.map(redactDeep);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, redactDeep(x)]));
+  return v;
+}
+
 async function proxyRest(req: Request, url: URL) {
   const target = `${REST}${url.pathname.slice("/rest/v1".length) || "/"}${url.search}`;
   const headers = new Headers(req.headers);
   headers.delete("host");
-  const r = await fetch(target, { method: req.method, headers, body: req.body, redirect: "manual" });
+  let body: BodyInit | null = req.body;
+  if (["POST", "PATCH"].includes(req.method) && /^\/rest\/v1\/(events|board_items)\b/.test(url.pathname)) {
+    const text = await req.text();
+    try { body = JSON.stringify(redactDeep(JSON.parse(text))); } catch { body = text; }
+    headers.delete("content-length");
+  }
+  const r = await fetch(target, { method: req.method, headers, body, redirect: "manual" });
   const out = new Headers(r.headers);
   out.set("access-control-allow-origin", "*");
   return new Response(r.body, { status: r.status, headers: out });

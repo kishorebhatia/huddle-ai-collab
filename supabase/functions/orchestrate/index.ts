@@ -6,7 +6,9 @@
 // POST { room, action: "stop_all" | "resume" }      -> kill switch for a room
 // POST { sweep: true }                              -> unstick stalled pipelines and jobs
 import { cors, db, json } from "../_shared/util.ts";
-import { getRoom, invokeFn, postEvent, type Room } from "../_shared/pipeline.ts";
+import { getRoom, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
+import { planGoal, type Plan } from "../_shared/plan.ts";
+import { secretNames } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 type Job = {
@@ -44,9 +46,13 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
   const stage = p.stages[s];
   const answers = (p.meta?.answers ?? []).map((a: any) => `- Q: ${a.q}\n  A: ${a.a}`).join("\n");
   const STAGE_ONLY: Record<string, string> = {
+    plan: "Plan how to deliver the goal end to end. Do not do the work yet.",
     research: "Do ONLY the research. Do not write code, HTML or page copy — a later stage builds it.",
     review: "Review ONLY the output of the stage just before this one.",
-    prototype: "Build the prototype, grounded in the research and the conversation.",
+    prototype: p.meta?.plan?.needs_backend
+      ? `Build the app (server + UI), grounded in the research and the conversation. Done when: ${p.meta.plan.done_when}. ` +
+        `Secrets it reads from process.env: ${(p.meta.plan.required_inputs ?? []).map((i: any) => i.name).join(", ") || "none"}.`
+      : "Build the prototype, grounded in the research and the conversation.",
     host: "Publish the latest prototype.",
   };
   const prompt = `STAGE ${s + 1} of ${p.stages.length} (${p.stages.join(" → ")}): ${stage.toUpperCase()}. ${STAGE_ONLY[stage] ?? ""}\n\n` +
@@ -76,6 +82,19 @@ async function advance(sb: SupabaseClient, p: any, s: number, room: Room) {
       { pipeline_id: p.id },
     );
     return;
+  }
+  // A build that needs keys waits for the room to supply them (in every mode: nobody can guess a key).
+  const inputs = (p.meta?.plan?.required_inputs ?? []) as Plan["required_inputs"];
+  if (p.stages[next] === "prototype" && inputs.length) {
+    const { missing } = await secretNames(sb, p.room_id, inputs.map((i) => i.name));
+    if (missing.length) {
+      const need = inputs.filter((i) => missing.includes(i.name));
+      const question = `This build needs ${need.map((i) => i.label).join(" and ")}. Add ${need.length > 1 ? "them" : "it"} below: ` +
+        `${need.length > 1 ? "they're" : "it's"} stored encrypted, used only by the build's sandbox, and never shown in the room.`;
+      await save(sb, p.id, { status: "waiting", current: s, gate: { kind: "secret", question, stage: next, inputs: need } });
+      await postEvent(sb, p.room_id, `Needs a key: "${p.title}" needs ${need.map((i) => i.label).join(", ")}. Add it in Agent work.`, { pipeline_id: p.id });
+      return;
+    }
   }
   if (p.stages[next] === "host" && room.mode !== "full" && !p.meta?.approved_publish) {
     const question = `Publish "${p.title}" to a public URL?`;
@@ -121,10 +140,26 @@ async function step(sb: SupabaseClient, pid: number) {
   }
 
   // cur.status === "done"
+  if (p.stages[s] === "plan" && cur.review) {
+    const plan = cur.review as Plan;
+    const stages = stagesFor(plan);
+    if (stages.join() !== p.stages.join()) {
+      await postEvent(sb, p.room_id, `Plan for "${p.title}": ${stages.slice(1).join(" → ")}`, { pipeline_id: p.id });
+    }
+    p.stages = stages;
+    p.meta = { ...(p.meta ?? {}), plan };
+    await save(sb, p.id, { stages, meta: p.meta });
+  }
   if (p.stages[s] === "review") {
     const r = cur.review ?? {};
     const asked = p.meta?.asked ?? {};
-    if (r.question_for_team && !asked[s]) {
+    if (r.question_for_team && !asked[s] && room.mode === "full") {
+      // Full auto: don't stop to ask. Record the assumption so later stages (and the room) see it.
+      p.meta = { ...(p.meta ?? {}), asked: { ...asked, [s]: true },
+        answers: [...(p.meta?.answers ?? []), { q: r.question_for_team, a: "Not asked (full auto): use your best judgment and state the assumption." }] };
+      await save(sb, p.id, { meta: p.meta });
+      await postEvent(sb, p.room_id, `Assumed instead of asking (full auto): ${r.question_for_team}`, { pipeline_id: p.id });
+    } else if (r.question_for_team && !asked[s]) {
       await save(sb, p.id, {
         status: "waiting",
         gate: { kind: "question", question: r.question_for_team, stage: s },
@@ -180,10 +215,29 @@ async function act(sb: SupabaseClient, pid: number, action: string, answer?: str
     meta.approved_publish = true;
   }
   if (gate.kind === "budget") meta.budget_override_until = new Date(Date.now() + 3600_000).toISOString();
+  if (gate.kind === "secret") {
+    if (action === "skip") {
+      await save(sb, pid, { status: "stopped", gate: null });
+      await postEvent(sb, p.room_id, `Stopped "${p.title}": it can't be built without ${(gate.inputs ?? []).map((i: any) => i.label).join(", ")}.`, { pipeline_id: pid });
+      return { stopped: pid };
+    }
+    const { missing } = await secretNames(sb, p.room_id, (gate.inputs ?? []).map((i: any) => i.name));
+    if (missing.length) return { missing };
+  }
   if (gate.kind === "question") {
     meta.answers = [...(meta.answers ?? []), { q: gate.question, a: answer || (action === "skip" ? "Use your best judgment." : "Approved as proposed.") }];
   }
-  await save(sb, pid, { status: "running", gate: null, meta });
+  // An answer can widen the goal ("include the prototype buildout"): plan again and add build stages.
+  let stages = p.stages as string[];
+  if (gate.kind === "question" && answer && !stages.includes("prototype")) {
+    const plan = await planGoal(p.goal, `TEAM ANSWERS:\n${meta.answers.map((a: any) => `- ${a.q} → ${a.a}`).join("\n")}`).catch(() => null);
+    if (plan?.deliverable === "app") {
+      stages = [...stages, "prototype", "review", "host"];
+      meta.plan = plan;
+      await postEvent(sb, p.room_id, `"${p.title}" will now also be built: ${stages.join(" → ")}`, { pipeline_id: pid });
+    }
+  }
+  await save(sb, pid, { status: "running", gate: null, meta, stages });
   if (answer) await postEvent(sb, p.room_id, `Got it — continuing "${p.title}" with: ${answer}`, { pipeline_id: pid });
   return await step(sb, pid);
 }

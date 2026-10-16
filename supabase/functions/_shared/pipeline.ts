@@ -1,11 +1,18 @@
 // Shared helpers for autonomous pipelines.
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
+// Every pipeline starts with a plan; the plan rewrites the stages that follow (see orchestrate).
 export const STAGE_SETS: Record<string, string[]> = {
-  research: ["research", "review"],
-  build: ["research", "review", "prototype", "review", "host"],
-  prototype: ["prototype", "review", "host"],
+  research: ["plan", "research", "review"],
+  build: ["plan", "research", "review", "prototype", "review", "host"],
+  prototype: ["plan", "prototype", "review", "host"],
 };
+
+/** The stages a plan calls for. */
+export function stagesFor(plan: { deliverable?: string; needs_research?: boolean }): string[] {
+  const research = plan.deliverable !== "app" || plan.needs_research ? ["research", "review"] : [];
+  return ["plan", ...research, ...(plan.deliverable === "app" ? ["prototype", "review", "host"] : [])];
+}
 
 export type Room = { id: string; mode: "suggest" | "auto" | "full"; paused: boolean; max_jobs_per_hour: number };
 

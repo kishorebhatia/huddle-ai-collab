@@ -55,6 +55,20 @@ const clip = (s: unknown, n = 8000) => {
 };
 export { clip };
 
+// Secret values a build used (registered by vault.ts) never leave in a span.
+function scrubAttrs(a: Attrs): Attrs {
+  const known: Set<string> | undefined = G.__huddleSecretValues;
+  if (!known?.size) return a;
+  const out: Attrs = {};
+  for (const [k, v] of Object.entries(a)) {
+    if (typeof v !== "string") { out[k] = v; continue; }
+    let t = v;
+    for (const s of known) if (t.includes(s)) t = t.split(s).join("[secret]");
+    out[k] = t;
+  }
+  return out;
+}
+
 /** Record a finished span (used for the pipeline root, whose start and end we know afterwards). */
 export function emitSpan(s: {
   traceId: string; spanId: string; parentId?: string; name: string; kind: string;
@@ -65,7 +79,7 @@ export function emitSpan(s: {
     // Arize parses OTLP/JSON ids the protobuf-JSON way (base64 bytes), so send base64 of our hex ids.
     traceId: b64(s.traceId), spanId: b64(s.spanId), parentSpanId: s.parentId ? b64(s.parentId) : undefined, name: s.name, kind: 1,
     startTimeUnixNano: String(Math.round(s.start * 1e6)), endTimeUnixNano: String(Math.round(s.end * 1e6)),
-    attributes: otlpAttrs({ "openinference.span.kind": s.kind, ...s.attrs }),
+    attributes: otlpAttrs(scrubAttrs({ "openinference.span.kind": s.kind, ...s.attrs })),
     status: s.error ? { code: 2, message: s.error.slice(0, 500) } : { code: 1 },
   });
 }

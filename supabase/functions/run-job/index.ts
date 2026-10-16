@@ -2,12 +2,26 @@
 // Status streams back via Realtime; pipeline jobs hand control back to the orchestrator when done.
 import { background, cors, db, FAST_MODEL, gemini, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
 import { invokeFn } from "../_shared/pipeline.ts";
-import { PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
+import { APP_SYSTEM, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
+import { planGoal, planMarkdown, type Plan } from "../_shared/plan.ts";
+import { resolveSecrets } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { lessonsFor, recordEval, judgeGrounding } from "../_shared/evals.ts";
 import { anchorOn, closeSession, openSession, readPage, screenshot, smokeTest } from "../_shared/anchor.ts";
-import { checkScripts, daytonaOn, deploySite, upload, type Sandbox } from "../_shared/daytona.ts";
+import { appLogs, checkApp, checkScripts, daytonaOn, deployApp, deploySite, startApp, upload, uploadApp, type Sandbox } from "../_shared/daytona.ts";
 import { current, span } from "../_shared/trace.ts";
+
+/** Files from ```file:<path> blocks (the app builder's output format). */
+function extractFiles(text: string): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const m of text.matchAll(/```file:([^\s`]+)\s*\n([\s\S]*?)```/g)) {
+    const path = m[1].replace(/^\/+/, "").replace(/\.\.\//g, "");
+    if (path && !/(^|\/)\.env/.test(path)) files[path] = m[2].replace(/\n$/, "");
+  }
+  return files;
+}
+const filesBlock = (files: Record<string, string>) =>
+  Object.entries(files).map(([p, c]) => `\`\`\`file:${p}\n${c}\n\`\`\``).join("\n\n");
 
 function extractHtml(text: string) {
   const fenced = text.match(/```html\s*([\s\S]*?)```/i);
@@ -34,7 +48,7 @@ async function contextPack(sb: SupabaseClient, job: any) {
   let stageInputs = "";
   let previous: any = null;
   if (job.pipeline_id) {
-    const { data: done } = await sb.from("jobs").select("id, kind, stage_index, output_md, output_html, sources")
+    const { data: done } = await sb.from("jobs").select("id, kind, stage_index, output_md, output_html, files, sources")
       .eq("pipeline_id", job.pipeline_id).eq("status", "done").order("id");
     const prior = (done ?? []).filter((j) => j.stage_index < job.stage_index);
     const lastOf = (k: string) => [...prior].reverse().find((j) => j.kind === k);
@@ -125,6 +139,8 @@ async function smoke(sb: SupabaseClient, job: any, url: string, goal: string, su
       `You are QA-testing a web prototype that is already open. It was built for: ${goal.slice(0, 500)}\n` +
       `What it should do: ${summary.slice(0, 400)}\n` +
       `Try its core interaction the way a first-time user would (type, click, filter, etc.). ` +
+      `If it uses server-side keys, they are already configured and you don't know their values: don't try to guess secrets. ` +
+      `Messages like "not configured", "missing API key" or a failed API call mean it is broken; a sensible answer to your input means it works. ` +
       `Report whether it actually works, what you did, what you saw, and any problems (errors, blank areas, controls that do nothing).`);
     let shot = "";
     try {
@@ -193,6 +209,61 @@ async function hostOnDaytona(sb: SupabaseClient, job: any, proto: any, goal: str
   }
 }
 
+/** Publish an app with a backend: secrets go in as .env inside the sandbox, then check, smoke-test, repair. */
+async function hostAppOnDaytona(sb: SupabaseClient, job: any, proto: any, goal: string, plan?: Plan) {
+  let files: Record<string, string> = { ...proto.files };
+  const summary: string = proto.output_md ?? "";
+  const env = await resolveSecrets(sb, job.room_id, (plan?.required_inputs ?? []).map((i) => i.name));
+  const app = await deployApp(files, env, { room: String(job.room_id).slice(0, 60), pipeline: String(job.pipeline_id ?? "") });
+  await setMeta(sb, job.id, { sandbox_id: app.id, sandbox_url: app.url });
+  const MAX_REPAIRS = 2;
+  for (let attempt = 0; ; attempt++) {
+    const check = await checkApp(app, files);
+    await recordEval({
+      name: "build_success", score: check.ok ? 1 : 0, room: job.room_id, jobId: job.id, pipelineId: job.pipeline_id, task: goal,
+      explanation: check.ok ? `server.js and the UI pass node --check in the Daytona sandbox${attempt ? ` after ${attempt} repair(s)` : ""}.` : `node --check failed: ${check.log.slice(0, 400)}`,
+    });
+    const t = await smoke(sb, job, app.url, goal, `${summary}\nDone when: ${plan?.done_when ?? ""}`).catch((e) => (console.error("smoke test", e), null));
+    if (!t) {
+      await setMeta(sb, job.id, { live_view_url: null, smoke_error: "browser test could not run" });
+      return { url: app.url, works: check.ok, repaired: attempt > 0, untested: true };
+    }
+    await recordEval({
+      name: "smoke_test", score: t.works ? 1 : 0, room: job.room_id, jobId: job.id, pipelineId: job.pipeline_id, task: goal,
+      explanation: `${t.works ? "Works" : "Broken"}${attempt ? ` (after ${attempt} repair(s))` : ""}. Tried: ${t.tried.slice(0, 300)} Saw: ${t.observed.slice(0, 300)}` +
+        (t.problems.length ? ` Problems: ${t.problems.join("; ").slice(0, 300)}` : ""),
+    });
+    await sb.from("events").insert({
+      room_id: job.room_id, author: "huddle", kind: "image", image_url: t.shot || null,
+      text: `**Smoke test ${t.works ? "passed" : "failed"}${attempt ? ` after ${attempt} repair(s)` : ""}** (Anchor, on the Daytona app)\n\n${t.observed.slice(0, 500)}`,
+      meta: { job_id: job.id, smoke: true },
+    });
+    await setMeta(sb, job.id, { live_view_url: null, screenshot_url: t.shot || null, smoke: t });
+    if ((check.ok && t.works) || attempt >= MAX_REPAIRS) return { url: app.url, works: check.ok && t.works, repaired: attempt > 0 };
+
+    // Self-repair from what Node, the server log and the browser saw. Secrets never go to the model.
+    const logs = await appLogs(app);
+    const { text } = await gemini({
+      systemInstruction: { parts: [{ text: APP_SYSTEM }] },
+      contents: [{ role: "user", parts: [{ text:
+        `This app was deployed and tested, and it is broken. Fix it; keep everything that works. Output every file again.\n` +
+        `DONE WHEN: ${plan?.done_when ?? ""}\nSECRETS IN process.env: ${Object.keys(env).join(", ") || "(none)"}\n` +
+        (check.ok ? "" : `NODE --check OUTPUT:\n${check.log}\n`) + (logs ? `SERVER LOG (last lines):\n${logs}\n` : "") +
+        `BROWSER TEST: tried: ${t.tried}\nsaw: ${t.observed}\nproblems: ${t.problems.join("; ")}\n\nCURRENT FILES:\n${filesBlock(files)}` }] }],
+    }, SMART_MODEL);
+    const fixed = extractFiles(text);
+    if (!fixed["server.js"] && !fixed["public/index.html"]) return { url: app.url, works: false, repaired: false };
+    files = { ...files, ...fixed };
+    await uploadApp(app, fixed);
+    await startApp(app);
+    await sb.from("jobs").update({ files, output_html: files["public/index.html"], output_md: `${summary}\n\nRepaired after the smoke test.`.trim(), updated_at: now() }).eq("id", proto.id);
+    await sb.from("events").insert({
+      room_id: job.room_id, author: "huddle", kind: "system",
+      text: `Repairing the app from what the browser and server log showed (attempt ${attempt + 1} of ${MAX_REPAIRS}), then testing again.`, meta: { job_id: job.id },
+    });
+  }
+}
+
 async function run(jobId: number) {
   const sb = db();
   const { data: job } = await sb.from("jobs").select("*").eq("id", jobId).single();
@@ -214,7 +285,9 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
     if (job.parent_id) {
       const { data: parent } = await sb.from("jobs").select("*").eq("id", job.parent_id).single();
       if (parent) {
-        parentBlock = job.kind === "prototype"
+        parentBlock = job.kind === "prototype" && parent.files
+          ? `\n\nPREVIOUS VERSION (revise it, keep what works; output every file again):\n${filesBlock(parent.files)}`
+          : job.kind === "prototype"
           ? `\n\nPREVIOUS VERSION (revise it, keep what works):\n\`\`\`html\n${parent.output_html ?? ""}\n\`\`\``
           : `\n\nPREVIOUS VERSION (revise and extend it):\n${parent.output_md ?? ""}`;
         if (!job.pipeline_id) parentBlock += `\n\nORIGINAL TASK: ${parent.prompt}`;
@@ -222,7 +295,16 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
     }
     const userText = `${ctx.text}\n\nTASK: ${job.title}\n${job.prompt}${parentBlock}`;
 
-    if (job.kind === "research") {
+    const { data: pipe } = job.pipeline_id
+      ? await sb.from("pipelines").select("goal, meta").eq("id", job.pipeline_id).maybeSingle() : { data: null };
+    const plan: Plan | undefined = pipe?.meta?.plan;
+
+    if (job.kind === "plan") {
+      const p = await planGoal(pipe?.goal ?? job.prompt, `\nCONTEXT:\n${ctx.text.slice(0, 6000)}`);
+      const md = planMarkdown(p);
+      await sb.from("jobs").update({ status: "done", review: p, output_md: md, updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": JSON.stringify(p) });
+    } else if (job.kind === "research") {
       const { text, raw } = await gemini({
         systemInstruction: { parts: [{ text: RESEARCH_SYSTEM + await lessonsFor("research") }] },
         contents: [{ role: "user", parts: [{ text: userText }] }],
@@ -245,6 +327,18 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       }
       await sb.from("jobs").update({ status: "done", output_md: text + note, sources, updated_at: now() }).eq("id", jobId);
       s.set({ "output.value": text + note });
+    } else if (job.kind === "prototype" && plan?.needs_backend) {
+      // A real app: server + UI, run on Daytona with the room's secrets as env vars.
+      const names = plan.required_inputs.map((i) => i.name);
+      const { text } = await gemini({
+        systemInstruction: { parts: [{ text: APP_SYSTEM + await lessonsFor("prototype") }] },
+        contents: [{ role: "user", parts: [{ text: `${userText}\n\nSECRETS IN process.env: ${names.join(", ") || "(none)"}\nDONE WHEN: ${plan.done_when}` }] }],
+      }, SMART_MODEL);
+      const files = extractFiles(text);
+      if (!files["server.js"] || !files["public/index.html"]) throw new Error("the app builder didn't return server.js and public/index.html");
+      const summary = text.match(/SUMMARY:\s*(.+)/i)?.[1]?.trim() ?? "";
+      await sb.from("jobs").update({ status: "done", files, output_html: files["public/index.html"], output_md: summary, updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": `${Object.keys(files).join(", ")}\n${summary}` });
     } else if (job.kind === "prototype") {
       const { text } = await gemini({
         systemInstruction: { parts: [{ text: PROTOTYPE_SYSTEM + await lessonsFor("prototype") }] },
@@ -258,7 +352,9 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
     } else if (job.kind === "review") {
       const target = ctx.previous;
       if (!target) throw new Error("nothing to review");
-      const work = target.kind === "prototype"
+      const work = target.kind === "prototype" && target.files
+        ? `APP UNDER REVIEW (all files):\n${filesBlock(target.files).slice(0, 80000)}`
+        : target.kind === "prototype"
         ? `PROTOTYPE UNDER REVIEW (HTML):\n\`\`\`html\n${(target.output_html ?? "").slice(0, 60000)}\n\`\`\``
         : `RESEARCH UNDER REVIEW:\n${target.output_md ?? ""}\nSOURCES: ${(target.sources ?? []).length}`;
       const r = await geminiJson<any>(
@@ -282,7 +378,7 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
         explanation: `${r.verdict}: ${(r.issues ?? []).join("; ") || (r.strengths ?? []).join("; ")}`.slice(0, 900),
       });
     } else if (job.kind === "host") {
-      const { data: proto } = await sb.from("jobs").select("id, output_html, output_md")
+      const { data: proto } = await sb.from("jobs").select("id, output_html, output_md, files")
         .eq("pipeline_id", job.pipeline_id).eq("kind", "prototype").eq("status", "done")
         .order("id", { ascending: false }).limit(1).maybeSingle();
       if (!proto?.output_html) throw new Error("no prototype to host");
@@ -294,8 +390,9 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       let note = "";
       const mode = Deno.env.get("HOST_MODE") ?? (daytonaOn() ? "daytona" : "");
       if (mode === "daytona") {
-        const { data: pipe } = await sb.from("pipelines").select("goal").eq("id", job.pipeline_id).maybeSingle();
-        const d = await hostOnDaytona(sb, job, proto, pipe?.goal ?? job.prompt);
+        const d = proto.files
+          ? await hostAppOnDaytona(sb, job, proto, pipe?.goal ?? job.prompt, plan)
+          : await hostOnDaytona(sb, job, proto, pipe?.goal ?? job.prompt);
         url = d.url;
         note = (d as { untested?: boolean }).untested ? " (browser test could not run)"
           : d.works ? (d.repaired ? " (repaired once, smoke test passed)" : " (smoke test passed)") : " (smoke test still failing)";
