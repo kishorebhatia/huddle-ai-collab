@@ -1,7 +1,9 @@
 // The door for each teammate's own Claude/Gemini/agent.
 //   GET  ?room=ID            -> the living brief as markdown (paste into or fetch from any assistant)
 //   POST { room, author, text, url?, kind? }  -> posts a finding/note into the room
-import { cors, db, json } from "../_shared/util.ts";
+import { background, cors, db, json } from "../_shared/util.ts";
+import { invokeFn } from "../_shared/pipeline.ts";
+import { redactPatterns } from "../_shared/secrets.ts";
 
 function toMarkdown(room: string, s: any, jobs: any[]) {
   const list = (title: string, items: any[] = [], fmt = (i: any) => i.text) =>
@@ -33,8 +35,10 @@ Deno.serve(async (req) => {
         headers: { ...cors, "content-type": "text/markdown; charset=utf-8" },
       });
     }
-    const { room, author, text, url, kind } = await req.json();
-    if (!room || !text) return json({ error: "room and text required" }, 400);
+    const { room, author, text: raw, url, kind } = await req.json();
+    if (!room || !raw) return json({ error: "room and text required" }, 400);
+    // Keys an assistant pastes are redacted before they're stored, same as from the browser.
+    const text = redactPatterns({ t: String(raw) }).files.t;
     const { data, error } = await sb.from("events").insert({
       room_id: room,
       author: author ?? "an assistant",
@@ -42,6 +46,8 @@ Deno.serve(async (req) => {
       text: url ? `${text}\n${url}` : text,
     }).select().single();
     if (error) throw error;
+    // A request from someone's own AI ("Huddle, build …") starts work like a spoken one does.
+    background(invokeFn("intake", { room, author: data.author, text, event_id: data.id }));
     return json({ ok: true, event_id: data.id });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);

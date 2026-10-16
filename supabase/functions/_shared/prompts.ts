@@ -161,6 +161,8 @@ Files:
   that call third-party APIs. Read every secret from process.env by the exact names given; NEVER put a key in any file,
   log, response or HTML. If a secret is missing, return a clear 500 JSON error instead of crashing.
 - public/index.html: the whole UI, inline CSS and JS, calling the API with fetch('/api/...'). It must work on a phone.
+  Browser libraries may be loaded only from https://cdn.jsdelivr.net or https://esm.sh with an exact version.
+  If the app is voice-first, also give it a typed-input mode on the same flow, so it can be tested without a microphone.
 - README.md: what it does and the env vars it needs (names only).
 Keep it focused: the core interaction must actually work end to end, under ~500 lines total. No placeholder TODOs.
 Output each file as its own fenced block whose info string is file:<path>, for example
