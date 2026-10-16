@@ -287,6 +287,11 @@ pre { background: var(--chip); border-radius: 10px; padding: 12px; font-family: 
 .jbtn { min-height: 46px; background: var(--sage); border-color: var(--sage); color: var(--deep); font-weight: 700; font-size: 14px; }
 .jbtn:hover { background: #B8CEA4; border-color: #B8CEA4; }
 .jnote { margin: 10px 0 0; font-size: 12.5px; color: #C9D8BB; }
+.price { margin: 10px 0 0; font-family: Manrope, sans-serif; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; color: var(--deep); }
+.price span { font-family: "DM Sans", sans-serif; font-size: 14px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.uplist { list-style: none; margin: 10px 0 0; padding: 0; }
+.uplist li { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; font-size: 14px; line-height: 1.45; }
+.uplist li svg { flex: none; margin-top: 2px; color: var(--green); }
 .upmark { width: 44px; height: 44px; border-radius: 12px; background: var(--soft); color: var(--green); display: grid; place-items: center; margin-bottom: 14px; }
 .rmenu { position: fixed; top: 58px; left: 12px; z-index: 45; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 8px; width: 300px; max-width: calc(100% - 24px); box-shadow: 0 16px 40px rgba(25,41,31,.2); }
 .rmenu .lbl { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 700; color: var(--ink-2); padding: 6px 10px; margin: 0; }
