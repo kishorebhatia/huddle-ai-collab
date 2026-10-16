@@ -33,3 +33,6 @@ verify_jwt = false
 
 [functions.eval-run]
 verify_jwt = false
+
+[functions.github]
+verify_jwt = false

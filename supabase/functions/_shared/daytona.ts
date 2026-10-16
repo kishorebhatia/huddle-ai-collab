@@ -20,10 +20,29 @@ async function api(url: string, init: RequestInit = {}, timeoutMs = 60_000) {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function upload(sb: Sandbox, name: string, content: string) {
+export async function upload(sb: Sandbox, name: string, content: string, base = SITE) {
   const fd = new FormData();
-  fd.append("file", new Blob([content]), name);
-  await api(`${sb.toolbox}/files/upload-v2?path=${encodeURIComponent(`${SITE}/${name}`)}`, { method: "POST", body: fd });
+  fd.append("file", new Blob([content]), name.split("/").pop());
+  await api(`${sb.toolbox}/files/upload-v2?path=${encodeURIComponent(`${base}/${name}`)}`, { method: "POST", body: fd });
+}
+
+/** A started public sandbox (no site yet). */
+export async function deploySandbox(labels: Record<string, string>): Promise<Sandbox> {
+  const created = await (await api(`${API}/sandbox`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    // Keep demo links up for two hours of no traffic; delete a day after they stop.
+    body: JSON.stringify({ public: true, autoStopInterval: 120, autoDeleteInterval: 1440, labels: { app: "huddle", ...labels } }),
+  })).json();
+  const id = created.id;
+  const base = String(created.toolboxProxyUrl ?? "https://proxy.app.daytona.io/toolbox").replace(/\/$/, "");
+  const sb: Sandbox = { id, toolbox: base.endsWith(id) ? base : `${base}/${id}`, url: "" };
+  for (let i = 0; i < 40; i++) {
+    const st = (await (await api(`${API}/sandbox/${id}`)).json()).state;
+    if (st === "started") return sb;
+    if (st === "error" || st === "build_failed") throw new Error(`sandbox ${id} ${st}`);
+    await sleep(1500);
+  }
+  throw new Error(`sandbox ${id} did not start`);
 }
 
 export function exec(sb: Sandbox, command: string, timeout = 60): Promise<{ exitCode: number; result: string }> {
@@ -40,20 +59,8 @@ export function exec(sb: Sandbox, command: string, timeout = 60): Promise<{ exit
 /** Create a public sandbox, upload the site and serve it. Returns the public preview URL. */
 export function deploySite(files: Record<string, string>, labels: Record<string, string>): Promise<Sandbox> {
   return span("daytona.deploy", "TOOL", { "tool.name": "daytona.deploy", "input.value": Object.keys(files).join(", ") }, async (s) => {
-    const created = await (await api(`${API}/sandbox`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      // Keep demo links up for two hours of no traffic; delete a day after they stop.
-      body: JSON.stringify({ public: true, autoStopInterval: 120, autoDeleteInterval: 1440, labels: { app: "huddle", ...labels } }),
-    })).json();
-    const id = created.id;
-    const base = String(created.toolboxProxyUrl ?? "https://proxy.app.daytona.io/toolbox").replace(/\/$/, "");
-    const sb: Sandbox = { id, toolbox: base.endsWith(id) ? base : `${base}/${id}`, url: "" };
-    for (let i = 0; i < 40; i++) {
-      const st = (await (await api(`${API}/sandbox/${id}`)).json()).state;
-      if (st === "started") break;
-      if (st === "error" || st === "build_failed") throw new Error(`sandbox ${id} ${st}`);
-      await sleep(1500);
-    }
+    const sb = await deploySandbox(labels);
+    const id = sb.id;
     for (const [name, content] of Object.entries(files)) await upload(sb, name, content);
     await api(`${sb.toolbox}/process/session`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: "web" }),

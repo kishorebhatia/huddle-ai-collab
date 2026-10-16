@@ -10,6 +10,8 @@
 import postgres from "npm:postgres@3.4.5";
 import { serveDir } from "jsr:@std/http@1.0.12/file-server";
 import { clip, emitSpan, pipelineCtx, span, type Ctx } from "../../supabase/functions/_shared/trace.ts";
+import { caller } from "../../supabase/functions/_shared/auth.ts";
+import { handleAuth } from "./auth.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) ?? d;
 const PORT = Number(env("PORT", "8080"));
@@ -49,7 +51,7 @@ async function loadFunctions() {
 
 // ---------- realtime ----------
 type Binding = { id: number; event: string; schema: string; table: string; filter?: string };
-type Chan = { topic: string; joinRef: string; bindings: Binding[]; presenceKey: string; self: boolean };
+type Chan = { topic: string; joinRef: string; bindings: Binding[]; presenceKey: string; self: boolean; room: string; token: string };
 type Client = { ws: WebSocket; chans: Map<string, Chan> };
 const clients = new Set<Client>();
 const presence = new Map<string, Map<string, { client: Client; meta: Record<string, unknown> }>>();
@@ -76,18 +78,38 @@ function onMessage(c: Client, raw: string) {
   const reply = (response: unknown = {}) => send(c, topic, "phx_reply", { status: "ok", response }, ref);
   if (topic === "phoenix") return reply();
   if (event === "phx_join") {
-    const cfg = payload?.config ?? {};
-    const bindings = (cfg.postgres_changes ?? []).map((b: Omit<Binding, "id">) => ({ ...b, id: bindingSeq++ }));
-    c.chans.set(topic, { topic, joinRef: ref, bindings, presenceKey: cfg.presence?.key || crypto.randomUUID(), self: !!cfg.broadcast?.self });
-    reply({ postgres_changes: bindings });
-    const room = presence.get(topic);
-    const state: Record<string, unknown> = {};
-    for (const [k, p] of room ?? []) state[k] = { metas: [p.meta] };
-    send(c, topic, "presence_state", state);
+    join(c, topic, payload, ref).catch((e) => console.error("join", e));
     return;
   }
   const ch = c.chans.get(topic);
   if (!ch) return reply();
+  if (event === "access_token") { ch.token = String(payload?.access_token ?? ""); return reply(); }
+  return onChannelMessage(c, ch, topic, event, payload, reply);
+}
+
+// Channels are named db-<room> and room-<room>; private rooms only admit their owner and members.
+const roomOfTopic = (topic: string) => topic.match(/^realtime:(?:db|room)-(.+)$/)?.[1] ?? "";
+
+async function join(c: Client, topic: string, payload: Record<string, any>, ref: string) {
+  const room = roomOfTopic(topic);
+  const token = String(payload?.access_token ?? "");
+  if (room && !(await canSee(room, `Bearer ${token}`))) {
+    return send(c, topic, "phx_reply", { status: "error", response: { reason: "This huddle is private" } }, ref);
+  }
+  {
+    const cfg = payload?.config ?? {};
+    const bindings = (cfg.postgres_changes ?? []).map((b: Omit<Binding, "id">) => ({ ...b, id: bindingSeq++ }));
+    c.chans.set(topic, { topic, joinRef: ref, bindings, presenceKey: cfg.presence?.key || crypto.randomUUID(), self: !!cfg.broadcast?.self, room, token });
+    send(c, topic, "phx_reply", { status: "ok", response: { postgres_changes: bindings } }, ref);
+    const here = presence.get(topic);
+    const state: Record<string, unknown> = {};
+    for (const [k, p] of here ?? []) state[k] = { metas: [p.meta] };
+    send(c, topic, "presence_state", state);
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+function onChannelMessage(c: Client, ch: Chan, topic: string, event: string, payload: any, reply: (r?: unknown) => void) {
   if (event === "phx_leave") { presenceLeave(c, topic); c.chans.delete(topic); return reply(); }
   if (event === "presence") {
     if (!presence.has(topic)) presence.set(topic, new Map());
@@ -131,6 +153,7 @@ async function onChange(msg: string) {
     row = rows[0].r;
   }
   if (t === "pipelines") pipelineRoot(row).catch((e) => console.error("root span", e));
+  if (t === "rooms" && row.visibility === "private") evictOutsiders(String(row.id)).catch((e) => console.error("evict", e));
   const data = {
     schema: "public", table: t, type: op, commit_timestamp: new Date().toISOString(), columns: [], errors: null,
     record: op === "DELETE" ? {} : row, old_record: op === "DELETE" ? row : {},
@@ -188,6 +211,28 @@ async function storage(req: Request, path: string): Promise<Response> {
   return new Response("not found", { status: 404 });
 }
 
+// ---------- private rooms ----------
+// RLS guards REST reads; these guard what RLS can't see: function calls and realtime fan-out.
+async function canSee(room: string, authorization: string | null) {
+  const who = await caller(new Request("http://local", { headers: { authorization: authorization ?? "" } }));
+  if (who.service) return true;
+  const r = await sql`select visibility, owner_id from public.rooms where id = ${room}`;
+  if (!r.length || r[0].visibility !== "private") return true;
+  if (!who.uid) return false;
+  if (Number(r[0].owner_id) === who.uid) return true;
+  return (await sql`select 1 from public.room_members where room_id = ${room} and user_id = ${who.uid}`).length > 0;
+}
+
+/** A room just went private: drop realtime subscribers who aren't allowed in any more. */
+async function evictOutsiders(room: string) {
+  for (const c of clients) for (const ch of [...c.chans.values()]) {
+    if (ch.room !== room || await canSee(room, `Bearer ${ch.token}`)) continue;
+    presenceLeave(c, ch.topic);
+    c.chans.delete(ch.topic);
+    send(c, ch.topic, "phx_close", {});
+  }
+}
+
 // ---------- tracing ----------
 // Each function call is a span. Pipeline work joins its pipeline's trace; everything else gets its own
 // trace in the room's session, so Arize groups a room's activity together.
@@ -204,6 +249,9 @@ async function traced(name: string, req: Request, h: Handler): Promise<Response>
   }
   if (pid && !room) room = (await sql`select room_id from public.pipelines where id = ${pid}`)[0]?.room_id;
   if (name === "eval-run") room = "ci";
+  else if (room && !(await canSee(room, req.headers.get("authorization")))) {
+    return new Response(JSON.stringify({ error: "This huddle is private" }), { status: 403, headers: { "content-type": "application/json" } });
+  }
   const ctx: Ctx = pid ? await pipelineCtx(pid, room) : { traceId: "", spanId: "", session: room };
   const input = { ...body };
   if (typeof input.audio === "string") input.audio = `[${input.audio.length} chars of audio]`;
@@ -265,11 +313,21 @@ async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS" && !p.startsWith("/functions/")) return new Response(null, { headers: CORS });
   if (p.startsWith("/rest/v1")) return proxyRest(req, url);
   if (p.startsWith("/storage/v1/")) return storage(req, p);
+  if (p.startsWith("/auth/")) {
+    const res = await handleAuth(req, url, sql);
+    if (res) return res;
+  }
   const fm = p.match(/^\/functions\/v1\/([\w-]+)/);
   if (fm) {
     const h = handlers.get(fm[1]);
     if (!h) return new Response(JSON.stringify({ error: `no function ${fm[1]}` }), { status: 404 });
-    if (req.method !== "POST") return await h(req);
+    if (req.method !== "POST") {
+      const room = url.searchParams.get("room");
+      if (room && req.method === "GET" && !(await canSee(room, req.headers.get("authorization")))) {
+        return new Response(JSON.stringify({ error: "This huddle is private" }), { status: 403 });
+      }
+      return await h(req);
+    }
     return await traced(fm[1], req, h);
   }
   if (p === "/config.js") {
@@ -277,7 +335,8 @@ async function handle(req: Request): Promise<Response> {
       `export const SUPABASE_URL = location.origin;\nexport const SUPABASE_KEY = ${JSON.stringify(ANON_KEY)};\n` +
         // No Gemini key → no server speech model; browsers transcribe with their own speech recognition.
         `export const SPEECH = ${JSON.stringify(env("GEMINI_API_KEY") ? "server" : "browser")};\n` +
-        `export const ARIZE_PROJECT_URL = ${JSON.stringify(env("ARIZE_PROJECT_URL"))};\n`,
+        `export const ARIZE_PROJECT_URL = ${JSON.stringify(env("ARIZE_PROJECT_URL"))};\n` +
+        `export const GITHUB_SIGNIN = ${JSON.stringify(!!env("GITHUB_CLIENT_ID"))};\n`,
       { headers: { "content-type": "text/javascript", "cache-control": "no-store" } },
     );
   }

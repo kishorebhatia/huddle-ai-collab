@@ -52,8 +52,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           # The key's forced command runs aws/autodeploy.sh; nothing else is possible with it.
-          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes ec2-user@"$DEPLOY_HOST" | tee deploy.log
-          grep -q "^deployed " deploy.log || grep -q . deploy.log || echo "already up to date"
+          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes ec2-user@"$DEPLOY_HOST"
       - name: Check the live site
         if: github.event_name != 'pull_request'
         run: |

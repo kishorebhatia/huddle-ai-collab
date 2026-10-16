@@ -4,7 +4,29 @@ import DOMPurify from "https://esm.sh/dompurify@3.1.6";
 import * as config from "./config.js";
 const { SUPABASE_URL, SUPABASE_KEY } = config;
 
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Signed in with GitHub? The sign-in callback hands back a Huddle token in the URL fragment.
+function readAuth() {
+  const ls = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { return null; } };
+  const frag = new URLSearchParams(location.hash.slice(1));
+  if (frag.get("huddle_token")) {
+    ls("huddle:token", frag.get("huddle_token"));
+    ls("huddle:user", frag.get("huddle_user") || "{}");
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  const token = ls("huddle:token");
+  try {
+    const { exp } = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (exp * 1000 > Date.now()) return { token, user: JSON.parse(ls("huddle:user") || "{}") };
+  } catch { /* no token, or not ours */ }
+  ls("huddle:token", null); ls("huddle:user", null);
+  return { token: null, user: null };
+}
+const auth = readAuth();
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, auth.token ? { global: { headers: { Authorization: `Bearer ${auth.token}` } } } : {});
+if (auth.token) sb.realtime.setAuth(auth.token);
+const signIn = (scope = "") => {
+  location.href = `/auth/github/login?return=${encodeURIComponent(location.pathname + location.search)}${scope ? `&scope=${scope}` : ""}`;
+};
 const $ = (id) => document.getElementById(id);
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
@@ -46,7 +68,7 @@ if (!room) {
   history.replaceState(null, "", url);
 }
 const clientId = crypto.randomUUID();
-let me = store.get("huddle:name") || "";
+let me = store.get("huddle:name") || auth.user?.name || auth.user?.login || "";
 
 // Rooms you've been in live in this browser only (no accounts yet).
 const myRooms = store.json("huddle:rooms", []);
@@ -1226,9 +1248,117 @@ function openUpgrade() {
   $("upgrade").hidden = false;
   setTimeout(() => $("upEmailInput").focus(), 50);
 }
-$("visSwitch").onclick = openUpgrade;
+// With GitHub sign-in configured, the switch really makes the huddle (and its repository) private.
+async function toggleVisibility() {
+  if (!config.GITHUB_SIGNIN) return openUpgrade();
+  if (!auth.token) return signIn("private");
+  const to = state.room?.visibility === "private" ? "public" : "private";
+  try {
+    let r = await fn("github", { room, action: "visibility", visibility: to });
+    if (r.need_scope) return signIn("private");
+    if (r.confirm_public) {
+      if (!confirm(`Making this huddle public also makes github.com/${r.repo.owner}/${r.repo.name} public. Anything in it can then be copied by anyone. Continue?`)) return;
+      r = await fn("github", { room, action: "visibility", visibility: to, confirm_public: true });
+    }
+    state.room = { ...(state.room || { id: room }), visibility: r.visibility };
+    renderVisibility();
+    toast(r.visibility === "private" ? "Private: only you and people you invite (by GitHub username) can open this huddle." : "Public: anyone with the link can join.");
+  } catch (e) { toast(e.message); }
+}
+function renderVisibility() {
+  const priv = state.room?.visibility === "private";
+  for (const id of ["visSwitch", "visSwitch2"]) {
+    $(id).classList.toggle("on", priv);
+    $(id).setAttribute("aria-checked", String(priv));
+    $(id).title = priv ? "Private: only invited GitHub users can open it" : "Public: anyone with the link can join";
+  }
+}
+$("visSwitch").onclick = toggleVisibility;
 $("newVis").onclick = openUpgrade;
-$("visSwitch2").onclick = openUpgrade;
+$("visSwitch2").onclick = toggleVisibility;
+
+// ---------- GitHub: sign in, back the room with a repository, publish ----------
+function renderGhButton() {
+  if (!config.GITHUB_SIGNIN) return;
+  $("ghBtn").hidden = false;
+  $("ghLabel").textContent = !auth.token ? "Sign in with GitHub" : state.room?.repo ? "GitHub repo" : "Publish to GitHub";
+}
+async function openGitHub() {
+  const body = $("ghBody");
+  body.innerHTML = "";
+  $("gh").hidden = false;
+  if (!auth.token) {
+    body.append(h("p", {}, "Sign in with GitHub to back this huddle with its own repository. Huddle writes the brief, decisions, research and the code it built there, with secrets removed."),
+      h("p", { class: "muted small" }, "Repositories are public unless you turn on Private. Huddle asks for access to private repositories only when you do."),
+      h("div", { class: "crow" }, h("button", { class: "btn pri", onclick: () => signIn() }, "Sign in with GitHub")));
+    return;
+  }
+  body.append(h("p", { class: "muted small" }, `Signed in as @${auth.user?.login}. `,
+    h("button", { class: "link", onclick: () => { store.del("huddle:token"); store.del("huddle:user"); location.reload(); } }, "Sign out")));
+  const wait = h("p", { class: "muted" }, "Loading…");
+  body.append(wait);
+  let st;
+  try { st = await fn("github", { room, action: "status" }); } catch (e) { wait.textContent = e.message; return; }
+  wait.remove();
+  const priv = st.visibility === "private";
+  body.append(h("p", {},
+    st.repo ? h("span", {}, "Backed by ", h("a", { href: st.repo.html_url, target: "_blank", rel: "noopener" }, `github.com/${st.repo.owner}/${st.repo.name}`),
+      st.repo.pages_url ? h("span", {}, " · ", h("a", { href: st.repo.pages_url, target: "_blank", rel: "noopener" }, "GitHub Pages")) : null)
+      : "Not backed by a repository yet. Publishing creates one in your account from the Huddle template.",
+    h("br"), h("span", { class: "muted small" },
+      `${priv ? "Private" : "Public"} · ${st.owner ? `owner @${st.owner.login}` : "no owner yet (publishing makes you the owner)"}`)));
+  const canEdit = st.is_owner || !st.owner;
+  if (priv) {
+    body.append(h("p", { class: "lab" }, "Members"), h("p", { class: "small" }, (st.members || []).map((m) => `@${m.login}${m.role === "owner" ? " (owner)" : m.user_id ? "" : " (invited)"}`).join(", ") || "Only you"));
+    if (st.is_owner) {
+      const inp = h("input", { class: "inp", placeholder: "GitHub username", "aria-label": "GitHub username to invite" });
+      body.append(h("div", { class: "crow" }, inp, h("button", { class: "btn ghost sm", onclick: async () => {
+        try { const r = await fn("github", { room, action: "invite", login: inp.value }); toast(`Invited @${r.invited}. They sign in with GitHub to open this huddle.`); openGitHub(); }
+        catch (e) { toast(e.message); }
+      } }, "Invite")));
+    }
+  }
+  if (!canEdit) { body.append(h("p", { class: "muted small" }, `Only @${st.owner.login} can publish this huddle.`)); return; }
+  const name = h("input", { class: "inp", value: st.repo?.name || (state.room?.name || `huddle-${room}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), "aria-label": "Repository name", disabled: !!st.repo });
+  const tr = h("input", { type: "checkbox", id: "ghTranscript" });
+  const out = h("div", { class: "ghfiles" });
+  const pub = h("button", { class: "btn pri", disabled: true }, "Publish");
+  const opts = () => ({ room, transcript: tr.checked, name: name.value });
+  const preview = async () => {
+    out.textContent = "Checking for secrets (patterns, then gitleaks in a Daytona sandbox)…";
+    pub.disabled = true;
+    try {
+      const r = await fn("github", { ...opts(), action: "preview" });
+      const n = r.files.filter((f) => f.changed).length;
+      out.innerHTML = "";
+      out.append(h("p", { class: "small" }, `${n} of ${r.files.length} files will be written to `, h("b", {}, `github.com/${r.target.owner}/${r.target.name}`),
+        ` (${r.target.private ? "private" : "public"}). ${r.note}.`),
+        r.findings.length ? h("p", { class: "small warn" }, `Redacted ${r.findings.length} secret${r.findings.length > 1 ? "s" : ""}: ${[...new Set(r.findings.map((f) => `${f.rule} in ${f.file}`))].join(", ")}`) : null,
+        h("ul", { class: "files" }, ...r.files.map((f) => h("li", { class: f.changed ? "" : "muted" }, `${f.path} · ${f.bytes.toLocaleString()} chars${f.changed ? "" : " · unchanged"}`))));
+      pub.disabled = !n;
+      pub.textContent = n ? `Publish ${n} file${n > 1 ? "s" : ""}` : "Up to date";
+    } catch (e) { out.textContent = e.message; }
+  };
+  pub.onclick = async () => {
+    pub.disabled = true; pub.textContent = "Publishing…";
+    try {
+      const r = await fn("github", { ...opts(), action: "publish" });
+      if (r.up_to_date) { toast("Already up to date."); return openGitHub(); }
+      toast(`Published ${r.changed.length} files.`);
+      out.innerHTML = "";
+      out.append(h("p", {}, "Published: ", h("a", { href: r.html_url, target: "_blank", rel: "noopener" }, `commit ${r.commit.slice(0, 7)}`), " in ",
+        h("a", { href: r.repo.html_url, target: "_blank", rel: "noopener" }, `${r.repo.owner}/${r.repo.name}`)));
+      state.room = { ...(state.room || { id: room }), repo: r.repo };
+      renderGhButton();
+    } catch (e) { toast(e.message); pub.disabled = false; pub.textContent = "Publish"; }
+  };
+  tr.onchange = preview;
+  body.append(h("p", { class: "lab" }, "Repository"), name,
+    h("label", { class: "small crow", for: "ghTranscript", style: "margin-top:8px" }, tr, "Include the transcript (speech and notes older than 2 minutes)"),
+    out, h("div", { class: "crow", style: "margin-top:10px" }, h("button", { class: "btn ghost", onclick: preview }, "Preview again"), pub));
+  preview();
+}
+$("ghBtn").onclick = openGitHub;
 function notifyMe() {
   const em = $("upEmailInput").value.trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast("Please enter a valid email.");
@@ -1247,7 +1377,9 @@ $("upEmailInput").addEventListener("keydown", (ev) => { if (ev.key === "Enter") 
 $("shareBtn").onclick = async () => {
   try {
     await navigator.clipboard.writeText(location.href);
-    toast("Invite link copied. This huddle is public, so anyone with the link can join.");
+    toast(state.room?.visibility === "private"
+      ? "Invite link copied. This huddle is private: invite people by GitHub username under GitHub."
+      : "Invite link copied. This huddle is public, so anyone with the link can join.");
   } catch {
     prompt("Copy this link", location.href);
   }
@@ -1540,6 +1672,8 @@ async function loadInitial() {
     }
   }
   renderRoomName();
+  renderVisibility();
+  renderGhButton();
   renderAll();
   // Start at the newest input (again after images load, which changes the height).
   const toBottom = () => { const l = $("events"); l.scrollTop = l.scrollHeight; };
@@ -1589,11 +1723,33 @@ function subscribe() {
 }
 
 async function start() {
+  // A private huddle you aren't in: the room row is hidden from you (RLS), so say why.
+  const { data: visible } = await sb.from("rooms").select("id").eq("id", room).maybeSingle();
+  if (!visible && config.GITHUB_SIGNIN && (await roomExists())) return privateGate();
   if (!me) { $("join").hidden = false; renderJoinInfo(); }
   await loadInitial();
   subscribe();
   if (!me) $("joinName").focus();
   else afterJoin();
+}
+
+// Does a room with this id exist at all (even if it's hidden from us)? Creating it would fail if so.
+async function roomExists() {
+  const { error } = await sb.from("rooms").insert({ id: room });
+  return !!error; // no error: we just created it, so it didn't exist
+
+}
+function privateGate() {
+  $("gh").hidden = false;
+  const body = $("ghBody");
+  body.innerHTML = "";
+  body.append(h("h3", {}, "This huddle is private"),
+    auth.token
+      ? h("p", {}, `You're signed in as @${auth.user?.login}, who isn't a member. Ask the owner to invite @${auth.user?.login} under GitHub → Members, then reload.`)
+      : h("p", {}, "Only invited GitHub users can open it. Sign in with the GitHub account you were invited with."),
+    h("div", { class: "crow" }, auth.token
+      ? h("button", { class: "btn ghost", onclick: () => { store.del("huddle:token"); store.del("huddle:user"); location.reload(); } }, "Use another account")
+      : h("button", { class: "btn pri", onclick: () => signIn() }, "Sign in with GitHub")));
 }
 
 setView("brief");

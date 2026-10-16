@@ -342,3 +342,10 @@ pre { background: var(--chip); border-radius: 10px; padding: 12px; font-family: 
   .rmenu { top: 56px; }
   .recbar { bottom: 136px; max-width: calc(100% - 16px); flex-wrap: wrap; }
 }
+
+/* ---------- GitHub panel ---------- */
+#ghBody .inp { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+#ghBody .crow .inp { flex: 1; }
+.ghfiles { margin-top: 12px; }
+.ghfiles .files { max-height: 220px; overflow: auto; margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; font-family: ui-monospace, monospace; }
+.ghfiles .warn { color: #9B2C1E; }

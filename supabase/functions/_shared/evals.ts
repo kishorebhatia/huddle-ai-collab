@@ -7,11 +7,12 @@ import { annotate, current, span } from "./trace.ts";
 
 // Below these, a score teaches the agent a lesson.
 const LEARN_BELOW: Record<string, number> = {
-  review_score: 0.7, groundedness: 0.7, faithfulness: 0.8, smoke_test: 0.5, build_success: 0.5,
+  review_score: 0.7, groundedness: 0.7, faithfulness: 0.8, smoke_test: 0.5, build_success: 0.5, secret_free: 0.5,
 };
 // Which prompt a lesson from each eval improves.
 const STAGE_OF: Record<string, string> = {
   groundedness: "research", faithfulness: "synthesize", smoke_test: "prototype", build_success: "prototype",
+  secret_free: "prototype",
 };
 
 type Verdict = { score: number; explanation: string; [k: string]: unknown };
