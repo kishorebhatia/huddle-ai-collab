@@ -1697,6 +1697,9 @@ function renderPeers() {
     wrap.append(h("span", { class: `pav${p.mic ? " mic" : ""}${p.ai ? " ai" : ""}`, style: `background:${colorFor(p.name)}`,
       title: `${p.name}${p.ai ? " · AI connected over MCP" : ""}${p.you ? " (you)" : ""}${p.mic ? " · mic on" : ""}${p.tabs > 1 ? ` · ${p.tabs} tabs` : ""}` }, p.ai ? "AI" : p.name.slice(0, 1).toUpperCase()));
   }
+  const here = $("hereCount");
+  here.textContent = `${seen.size} here`;
+  here.hidden = !seen.size;
   renderJoinInfo();
 }
 
