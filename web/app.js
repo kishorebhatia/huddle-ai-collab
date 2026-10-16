@@ -52,10 +52,11 @@ let me = store.get("huddle:name") || "";
 const myRooms = store.json("huddle:rooms", []);
 if (!myRooms.find((r) => r.id === room)) myRooms.unshift({ id: room, name: "" });
 store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
-const roomLabel = (id) => myRooms.find((r) => r.id === id)?.name || `Room ${id}`;
-$("roomName").textContent = roomLabel(room);
+// The current room's name is shared (rooms.name); other rooms fall back to what this browser remembers.
+const roomLabel = (id) => (id === room && state?.room?.name) || myRooms.find((r) => r.id === id)?.name || `Room ${id}`;
+$("roomName").textContent = myRooms.find((r) => r.id === room)?.name || `Room ${room}`;
 $("roomCode").textContent = room;
-document.title = `${roomLabel(room)} · Huddle`;
+document.title = `${$("roomName").textContent} · Huddle`;
 
 const COLORS = ["#1D4ED8", "#0E7490", "#6D28D9", "#B45309", "#BE185D", "#15803D", "#B42318"];
 const colorFor = (name) => {
@@ -1149,17 +1150,62 @@ $("roomBtn").onclick = (ev) => {
   const m = $("roomMenu");
   m.hidden = !m.hidden;
   $("roomBtn").setAttribute("aria-expanded", String(!m.hidden));
-  if (!m.hidden) renderRoomMenu();
+  if (!m.hidden) { renderRoomMenu(); $("renameRow").hidden = true; $("renameBtn").hidden = false; }
 };
 document.addEventListener("click", (ev) => {
   if (!$("roomMenu").hidden && !$("roomMenu").contains(ev.target)) { $("roomMenu").hidden = true; $("roomBtn").setAttribute("aria-expanded", "false"); }
 });
+// Anyone in the room can rename it; everyone sees the new name live.
+function renderRoomName() {
+  const name = roomLabel(room);
+  $("roomName").textContent = name;
+  document.title = `${name} · Huddle`;
+  if (!$("join").hidden) $("joinRoom").textContent = name;
+  const mine = myRooms.find((r) => r.id === room);
+  if (mine && state.room?.name && mine.name !== state.room.name) {
+    mine.name = state.room.name;
+    store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
+  }
+}
+$("renameBtn").onclick = (ev) => {
+  ev.stopPropagation();
+  $("renameRow").hidden = false;
+  $("renameBtn").hidden = true;
+  $("renameInput").value = roomLabel(room).startsWith("Room ") && !state.room?.name ? "" : roomLabel(room);
+  $("renameInput").placeholder = "e.g. Hackathon team, Q4 launch";
+  $("renameInput").focus();
+  $("renameInput").select();
+};
+async function saveRoomName() {
+  const name = $("renameInput").value.trim().replace(/\s+/g, " ").slice(0, 60);
+  if (!name) return toast("Give the huddle a name first.");
+  if (!me) return toast("Join the huddle first");
+  const before = state.room?.name ?? null;
+  state.room = { ...(state.room || { id: room }), name };
+  renderRoomName();
+  $("roomMenu").hidden = true;
+  const { error } = await sb.from("rooms").update({ name }).eq("id", room);
+  if (error) {
+    state.room = { ...state.room, name: before };
+    renderRoomName();
+    return toast(`Couldn't rename: ${error.message}`);
+  }
+  toast(`Renamed to “${name}”. Everyone in the room sees it now.`);
+}
+$("renameSave").onclick = saveRoomName;
+$("renameInput").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); saveRoomName(); }
+  if (ev.key === "Escape") { ev.stopPropagation(); $("roomMenu").hidden = true; }
+});
+$("roomMenu").addEventListener("click", (ev) => ev.stopPropagation());
+
 $("newRoomBtn").onclick = () => { $("roomMenu").hidden = true; $("newRoom").hidden = false; $("newName").focus(); };
 $("createRoom").onclick = async () => {
   const id = Math.random().toString(36).slice(2, 8);
   const name = $("newName").value.trim().slice(0, 60) || "New huddle";
   myRooms.unshift({ id, name });
   store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
+  store.set(`huddle:pendingName:${id}`, name);
   const link = `${location.origin}${location.pathname}?room=${id}`;
   try { await navigator.clipboard.writeText(link); } catch {}
   location.href = link;
@@ -1476,6 +1522,16 @@ async function loadInitial() {
   (pipes.data || []).forEach((p) => state.pipelines.set(p.id, p));
   state.brain = brain.data;
   state.room = roomRow.data;
+  // A huddle you just created gets the name you gave it, shared with everyone.
+  const pendingName = store.get(`huddle:pendingName:${room}`);
+  if (pendingName) {
+    store.del(`huddle:pendingName:${room}`);
+    if (!state.room?.name) {
+      const { error } = await sb.from("rooms").update({ name: pendingName }).eq("id", room);
+      if (!error) state.room = { ...(state.room || { id: room }), name: pendingName };
+    }
+  }
+  renderRoomName();
   renderAll();
   // Start at the newest input (again after images load, which changes the height).
   const toBottom = () => { const l = $("events"); l.scrollTop = l.scrollHeight; };
@@ -1507,7 +1563,7 @@ function subscribe() {
         if (p.host_url && !prev?.host_url) toast(`Live: ${p.title}`);
       })
     .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room}` },
-      ({ new: r }) => { state.room = r; renderWork(); })
+      ({ new: r }) => { const renamed = r.name && r.name !== state.room?.name; state.room = r; renderWork(); renderRoomName(); if (renamed) toast(`This huddle is now called “${r.name}”.`); })
     .subscribe();
 
   roomChannel = sb.channel(`room-${room}`, { config: { presence: { key: clientId }, broadcast: { self: false } } });
