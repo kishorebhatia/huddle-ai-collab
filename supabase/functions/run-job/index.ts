@@ -3,7 +3,7 @@
 import { background, cors, db, FAST_MODEL, gemini, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
 import { invokeFn } from "../_shared/pipeline.ts";
 import { APP_SYSTEM, IMPROVE_SYSTEM, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
-import { adminToken, currentPrompts, evidence, openPr, PROMPTS_PATH, typeCheck } from "../_shared/operator.ts";
+import { adminToken, currentPrompts, evidence, mergePr, openPr, PROMPTS_PATH, typeCheck, waitForChecks } from "../_shared/operator.ts";
 import { planGoal, planMarkdown, type Plan } from "../_shared/plan.ts";
 import { resolveSecrets } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -335,8 +335,33 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
         `The \`evals\` check runs the regression set with this prompt and logs it to Arize as an experiment. Merging deploys it.\n\n` +
         `🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
       const pr = await openPr(token, change.files[PROMPTS_PATH], change.meta?.base_sha, title, body);
-      await sb.from("jobs").update({ status: "done", output_md: `Pull request #${pr.number}: ${pr.url}`, sources: [{ title: `PR #${pr.number}`, url: pr.url }], updated_at: now() }).eq("id", jobId);
+      await sb.from("jobs").update({ status: "done", output_md: `Pull request #${pr.number}: ${pr.url}`, sources: [{ title: `PR #${pr.number}`, url: pr.url }],
+        meta: { ...(job.meta ?? {}), pr_number: pr.number, pr_url: pr.url, pr_title: title }, updated_at: now() }).eq("id", jobId);
       s.set({ "output.value": pr.url });
+    } else if (job.kind === "ship") {
+      // Ship it: CI's eval gate decides. In Full auto Huddle merges a green PR (merging deploys); otherwise a human does.
+      const { data: prJob } = await sb.from("jobs").select("meta").eq("pipeline_id", job.pipeline_id).eq("kind", "pr").eq("status", "done")
+        .order("id", { ascending: false }).limit(1).maybeSingle();
+      const n = prJob?.meta?.pr_number;
+      if (!n) throw new Error("no pull request to ship");
+      const { token } = await adminToken(sb);
+      await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Waiting for CI's evals on PR #${n}…`, meta: { job_id: jobId } });
+      const c = await waitForChecks(token, n);
+      const { data: roomRow } = await sb.from("rooms").select("mode").eq("id", job.room_id).maybeSingle();
+      let md: string;
+      if (c.conclusion !== "success") {
+        md = `Not merged: CI's evals ${c.conclusion} on PR #${n}${c.url ? ` (${c.url})` : ""}. The change stays a proposal.`;
+      } else if (roomRow?.mode !== "full") {
+        md = `CI's evals passed on PR #${n}. Merge it to deploy: ${prJob.meta.pr_url} (Huddle merges by itself only in Full auto).`;
+      } else {
+        const m = await mergePr(token, n, prJob.meta.pr_title ?? `Huddle change`);
+        md = m.merged
+          ? `Merged PR #${n} after CI's evals passed (commit ${m.sha.slice(0, 7)}). CI now runs on ${"the branch"} and deploys it when the evals pass again.`
+          : `CI passed but GitHub wouldn't merge PR #${n}; merge it yourself: ${prJob.meta.pr_url}`;
+      }
+      await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: md, meta: { job_id: jobId } });
+      await sb.from("jobs").update({ status: "done", output_md: md, sources: [{ title: `PR #${n}`, url: prJob.meta.pr_url }], updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": md });
     } else if (job.kind === "plan") {
       const p = await planGoal(pipe?.goal ?? job.prompt, `\nCONTEXT:\n${ctx.text.slice(0, 6000)}`);
       const md = planMarkdown(p);

@@ -21,6 +21,7 @@ services:
       - ../supabase/migrations/20261016020000_goal_to_live.sql:/docker-entrypoint-initdb.d/17_goal_to_live.sql:ro
       - ../supabase/migrations/20261016030000_operator.sql:/docker-entrypoint-initdb.d/18_operator.sql:ro
       - ../supabase/migrations/20261016040000_mcp_links.sql:/docker-entrypoint-initdb.d/19_mcp_links.sql:ro
+      - ../supabase/migrations/20261016050000_operator_ship.sql:/docker-entrypoint-initdb.d/20_operator_ship.sql:ro
       - ./db/99_realtime.sql:/docker-entrypoint-initdb.d/99_realtime.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d huddle"]

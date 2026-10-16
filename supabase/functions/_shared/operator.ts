@@ -84,3 +84,26 @@ export async function openPr(token: string, content: string, baseSha: string, ti
   const pr = await api(`/repos/${REPO}/pulls`, { method: "POST", body: JSON.stringify({ title, head: branch, base: BRANCH, body }) });
   return { url: pr.html_url as string, number: pr.number as number, branch };
 }
+
+/** Wait for CI's `evals` check on a pull request's head commit. */
+export async function waitForChecks(token: string, prNumber: number, timeoutMs = 10 * 60_000) {
+  const api = gh(token);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pr = await api(`/repos/${REPO}/pulls/${prNumber}`);
+    const runs = await api(`/repos/${REPO}/commits/${pr.head.sha}/check-runs`);
+    // deno-lint-ignore no-explicit-any
+    const evals = (runs.check_runs ?? []).find((c: any) => c.name === "evals");
+    if (evals?.status === "completed") return { conclusion: evals.conclusion as string, url: evals.html_url as string, sha: pr.head.sha as string, mergeable: pr.mergeable as boolean | null };
+    await new Promise((r) => setTimeout(r, 15_000));
+  }
+  return { conclusion: "timed_out", url: "", sha: "", mergeable: null };
+}
+
+/** Squash-merge a pull request (the push to the branch then runs CI again, which deploys). */
+export async function mergePr(token: string, prNumber: number, title: string) {
+  const r = await gh(token)(`/repos/${REPO}/pulls/${prNumber}/merge`, {
+    method: "PUT", body: JSON.stringify({ merge_method: "squash", commit_title: `${title} (#${prNumber})` }),
+  });
+  return { sha: r.sha as string, merged: !!r.merged };
+}

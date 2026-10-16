@@ -47,8 +47,11 @@ export async function handleAuth(req: Request, url: URL, sql: ReturnType<typeof 
     const admins = (Deno.env.get("ADMIN_LOGINS") ?? "kishorebhatia").toLowerCase().split(",").map((x) => x.trim());
     if (admins.includes(String(row.login).toLowerCase())) {
       const op = Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator";
-      await sql`insert into public.rooms (id, name, owner_id, visibility) values (${op}, 'Huddle operator', ${row.id}, 'private')
-        on conflict (id) do update set owner_id = coalesce(public.rooms.owner_id, excluded.owner_id), visibility = 'private'`;
+      const repo = Deno.env.get("SELF_REPO") ?? "kishorebhatia/huddle-ai-collab";
+      const branch = Deno.env.get("SELF_BRANCH") ?? "redesign-v4";
+      const self = { owner: repo.split("/")[0], name: repo.split("/")[1], branch, html_url: `https://github.com/${repo}/tree/${branch}`, self: true, private: false };
+      await sql`insert into public.rooms (id, name, owner_id, visibility, repo) values (${op}, 'Huddle operator', ${row.id}, 'private', ${sql.json(self)})
+        on conflict (id) do update set owner_id = coalesce(public.rooms.owner_id, excluded.owner_id), visibility = 'private', repo = excluded.repo`;
       await sql`insert into public.room_members (room_id, user_id, login, role) values (${op}, ${row.id}, ${row.login}, 'owner')
         on conflict (room_id, login) do update set user_id = excluded.user_id`;
     }

@@ -1215,6 +1215,13 @@ function renderRoomMenu() {
     } }, h("span", { class: "rdot", "aria-hidden": "true" }, name.slice(0, 1).toUpperCase()),
       h("span", { class: "grow" }, name, h("small", {}, r.id === room ? "You’re here" : "Public"))));
   }
+  // The admin's way into the operator room, where Huddle changes Huddle.
+  const admins = String(config.ADMIN_LOGINS || "").toLowerCase().split(",");
+  if (auth.user?.login && admins.includes(auth.user.login.toLowerCase()) && room !== config.OPERATOR_ROOM) {
+    list.append(h("button", { class: "ritem", role: "menuitem", onclick: () => { location.href = `${location.pathname}?room=${encodeURIComponent(config.OPERATOR_ROOM)}`; } },
+      h("span", { class: "rdot", "aria-hidden": "true" }, "⚙"),
+      h("span", { class: "grow" }, "Operator", h("small", {}, "Improve Huddle itself: changes go to GitHub as pull requests"))));
+  }
 }
 $("roomBtn").onclick = (ev) => {
   ev.stopPropagation();
@@ -1332,7 +1339,7 @@ function renderGhButton() {
   if (!config.GITHUB_SIGNIN && !config.GITHUB_ORG) return;
   const priv = state.room?.visibility === "private";
   $("ghBtn").hidden = false;
-  $("ghLabel").textContent = state.room?.repo ? (priv ? "Private repo" : "Public repo")
+  $("ghLabel").textContent = state.room?.repo?.self ? "Huddle repo" : state.room?.repo ? (priv ? "Private repo" : "Public repo")
     : config.GITHUB_ORG && !priv ? "Save to GitHub" : !auth.token ? "Sign in with GitHub" : "Publish to GitHub";
   $("ghBtn").title = state.room?.repo ? `github.com/${state.room.repo.owner}/${state.room.repo.name}` : "Back this huddle with its own GitHub repository";
 }
@@ -1357,6 +1364,12 @@ async function openGitHub() {
   let st;
   try { st = await fn("github", { room, action: "status" }); } catch (e) { wait.textContent = e.message; return; }
   wait.remove();
+  if (st.self) {
+    body.append(h("p", {}, "This is the operator room. It's connected to Huddle's own code: ",
+      h("a", { href: st.repo.html_url, target: "_blank", rel: "noopener" }, `github.com/${st.repo.owner}/${st.repo.name}`), ` (branch ${st.repo.branch}).`),
+      h("p", { class: "muted small" }, "Ask for a change in the room. Huddle edits its prompts, type-checks them in Daytona, has the change reviewed, and opens a pull request. CI runs the evals on it; in Full auto Huddle merges it when they pass, which deploys it. Otherwise you merge it."));
+    return;
+  }
   const priv = st.visibility === "private";
   body.append(h("p", {},
     st.repo ? h("span", {}, "Backed by ", h("a", { href: st.repo.html_url, target: "_blank", rel: "noopener" }, `github.com/${st.repo.owner}/${st.repo.name}`),

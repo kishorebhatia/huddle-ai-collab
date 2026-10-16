@@ -160,9 +160,14 @@ Deno.serve(async (req) => {
       return json({ error: "Sign in with GitHub first", need_signin: true }, 401);
     }
 
+    // The operator room is backed by Huddle's own repository; its changes arrive as pull requests.
+    if (roomId === (Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator") && action !== "status" && action !== "invite") {
+      return json({ error: "The operator room is connected to Huddle's own repository. Its changes go there as pull requests from Agent work, not by publishing." }, 400);
+    }
+
     if (action === "status") {
       const { data: owner } = room.owner_id ? await sb.from("users").select("login, avatar_url").eq("id", room.owner_id).single() : { data: null };
-      return json({ org_mode: ORG_MODE, org: ORG, owner, visibility: room.visibility, repo: room.repo, members, is_owner: isOwner, signed_in: !!user });
+      return json({ org_mode: ORG_MODE, org: ORG, owner, visibility: room.visibility, repo: room.repo, members, is_owner: isOwner, signed_in: !!user, self: !!room.repo?.self });
     }
 
     if (settings || (room.visibility === "private" && !who.service)) {

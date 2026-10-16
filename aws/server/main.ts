@@ -385,7 +385,9 @@ async function handle(req: Request): Promise<Response> {
         `export const ARIZE_PROJECT_URL = ${JSON.stringify(env("ARIZE_PROJECT_URL"))};\n` +
         `export const GITHUB_SIGNIN = ${JSON.stringify(!!env("GITHUB_CLIENT_ID"))};\n` +
         // Public rooms are saved to this org with no sign-in.
-        `export const GITHUB_ORG = ${JSON.stringify(env("GITHUB_ORG_TOKEN") ? env("GITHUB_ORG") : "")};\n`,
+        `export const GITHUB_ORG = ${JSON.stringify(env("GITHUB_ORG_TOKEN") ? env("GITHUB_ORG") : "")};\n` +
+        `export const ADMIN_LOGINS = ${JSON.stringify(env("ADMIN_LOGINS", "kishorebhatia"))};\n` +
+        `export const OPERATOR_ROOM = ${JSON.stringify(env("OPERATOR_ROOM", "huddle-operator"))};\n`,
       { headers: { "content-type": "text/javascript", "cache-control": "no-store" } },
     );
   }

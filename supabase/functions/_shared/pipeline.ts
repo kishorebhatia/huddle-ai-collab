@@ -7,7 +7,7 @@ export const STAGE_SETS: Record<string, string[]> = {
   build: ["plan", "research", "review", "prototype", "review", "host"],
   prototype: ["plan", "prototype", "review", "host"],
   // The operator room: change Huddle's own prompts, review the change, open a pull request.
-  improve: ["improve", "review", "pr"],
+  improve: ["improve", "review", "pr", "ship"],
 };
 export const OPERATOR_ROOM = Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator";
 

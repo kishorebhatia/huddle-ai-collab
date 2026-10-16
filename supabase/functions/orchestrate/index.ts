@@ -19,6 +19,7 @@ type Job = {
 const MAX_REVISIONS = 1;   // per reviewed stage
 const MAX_RETRIES = 1;     // per failed stage
 const STUCK_MS = 6 * 60_000;
+const STUCK_SHIP_MS = 14 * 60_000; // ship waits up to 10 min for CI
 
 async function load(sb: SupabaseClient, pid: number) {
   const { data: p } = await sb.from("pipelines").select("*").eq("id", pid).maybeSingle();
@@ -49,6 +50,7 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
     plan: "Plan how to deliver the goal end to end. Do not do the work yet.",
     improve: "Change Huddle's prompts to fix what the evidence shows. Only prompts.ts.",
     pr: "Open a pull request with the reviewed change.",
+    ship: "Merge the pull request once CI's evals pass (Full auto), or hand it to a human.",
     research: "Do ONLY the research. Do not write code, HTML or page copy — a later stage builds it.",
     review: "Review ONLY the output of the stage just before this one.",
     prototype: p.meta?.plan?.needs_backend
@@ -250,7 +252,9 @@ async function sweep(sb: SupabaseClient) {
   // Jobs that died mid-run (function killed) → failed, so the pipeline can retry
   const stuckBefore = new Date(Date.now() - STUCK_MS).toISOString();
   await sb.from("jobs").update({ status: "failed", error: "timed out" })
-    .eq("status", "running").lt("updated_at", stuckBefore);
+    .eq("status", "running").neq("kind", "ship").lt("updated_at", stuckBefore);
+  await sb.from("jobs").update({ status: "failed", error: "timed out" })
+    .eq("status", "running").eq("kind", "ship").lt("updated_at", new Date(Date.now() - STUCK_SHIP_MS).toISOString());
   // Pipelines with no movement for 45 s get a nudge
   const idleBefore = new Date(Date.now() - 45_000).toISOString();
   const { data: ps } = await sb.from("pipelines").select("id").eq("status", "running").lt("updated_at", idleBefore).limit(20);
