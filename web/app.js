@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { marked } from "https://esm.sh/marked@12.0.2";
 import DOMPurify from "https://esm.sh/dompurify@3.1.6";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
+import * as config from "./config.js";
+const { SUPABASE_URL, SUPABASE_KEY } = config;
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
@@ -665,6 +666,30 @@ async function runJob(id) {
   catch (e) { toast(`Could not start job: ${e.message}`); }
 }
 const jobsOf = (pid) => [...state.jobs.values()].filter((j) => j.pipeline_id === pid);
+
+// What each integration did for a pipeline: Anchor (live view, screenshot), Daytona (sandbox URL),
+// Arize (eval scores, trace). Only shows on deploys that have them (AWS build).
+const EVAL_LABEL = { groundedness: "Grounded", review_score: "Review", smoke_test: "Smoke test", build_success: "Build", faithfulness: "Faithful" };
+function proofRow(p) {
+  const metas = jobsOf(p.id).map((j) => j.meta || {});
+  const pick = (k) => metas.map((m) => m[k]).filter(Boolean).pop();
+  const evals = {};
+  for (const m of metas) for (const [k, v] of Object.entries(m.evals || {})) evals[k] = v;
+  const live = p.status === "running" ? pick("live_view_url") : null;
+  const shot = pick("screenshot_url"), sandbox = pick("sandbox_url"), trace = pick("trace_id");
+  if (!live && !shot && !sandbox && !trace && !Object.keys(evals).length) return null;
+  const a = (href, text, cls, title) => h("a", { class: `proof ${cls}`, href, target: "_blank", rel: "noopener", title, onclick: (ev) => ev.stopPropagation() }, text);
+  const fmt = (k, v) => k === "review_score" ? `${Math.round(v * 10)}/10` : ["smoke_test", "build_success"].includes(k) ? (v >= 1 ? "pass" : "fail") : v.toFixed(2);
+  const arize = config.ARIZE_PROJECT_URL;
+  return h("div", { class: "proofs" },
+    live ? a(live, "● Watch Anchor live", "anchor live", "Anchor's cloud browser testing the prototype right now") : null,
+    shot ? a(shot, "Anchor screenshot", "anchor", "What Anchor's browser saw during the smoke test") : null,
+    sandbox ? a(sandbox, "Daytona sandbox ↗", "daytona", "The prototype running in its Daytona sandbox") : null,
+    ...Object.entries(evals).map(([k, v]) => h("span", {
+      class: `proof eval ${v.score >= 0.7 ? "ok" : "low"}`, title: `Arize eval "${k}": ${v.explanation || ""}`,
+    }, `${EVAL_LABEL[k] || k} ${fmt(k, v.score)}`)),
+    trace ? (arize ? a(arize, "Arize trace ↗", "arize", `Trace ${trace} in Arize AX`) : h("span", { class: "proof arize", title: trace }, `Arize trace ${trace.slice(0, 8)}`)) : null);
+}
 const pipeType = (p) => (p.stages.includes("prototype") ? "build" : "research");
 
 function stageChips(p) {
@@ -767,6 +792,8 @@ function renderWork() {
     run.append(h("button", { class: `jrow${hit ? " hl" : ""}`, "aria-expanded": String(open), onclick: () => { open ? ui.openJobs.delete(key) : ui.openJobs.add(key); renderWork(); } },
       h("span", { class: `tb ${pipeType(p)}` }, pipeType(p)),
       h("span", { class: "grow" }, h("b", {}, p.title), h("small", {}, stepText(p)))));
+    const proof = proofRow(p);
+    if (proof) run.append(proof);
     if (open) {
       run.append(h("div", { class: "jdet" }, stageChips(p),
         h("div", { class: "crow" }, h("span", { class: "muted small grow" }, `#${p.id} · ${p.created_by}`),
@@ -798,6 +825,8 @@ function renderWork() {
         h("span", { class: `dot${failed ? " failed" : ""}` }), h("span", { class: "grow" }, p.title),
         p.host_url ? h("a", { class: "live-link", href: p.host_url, target: "_blank", rel: "noopener", onclick: (ev) => ev.stopPropagation() }, "Live ↗")
           : h("span", { class: "muted small" }, failed ? `${p.status} · restart` : pipeType(p))));
+      const proof = proofRow(p);
+      if (proof) done.append(proof);
     } else {
       const j = d.j;
       const failed = j.status === "failed";
@@ -1240,6 +1269,7 @@ async function flush(force = false) {
   const frames = mic.frames;
   const speechMs = mic.speechMs;
   mic.frames = []; mic.speechMs = 0; mic.silenceMs = 0; mic.speaking = false;
+  if (mic.recog) return setMicLabel();
   if (!frames.length || (!force && speechMs < 500)) return setMicLabel();
   const wav = encodeWav(frames, mic.ctx.sampleRate);
   inflight++;
@@ -1294,11 +1324,37 @@ async function startMic() {
   src.connect(mic.proc);
   mic.proc.connect(mic.ctx.destination);
   mic.on = true;
+  if (config.SPEECH === "browser") startBrowserSpeech();
   roomChannel?.track({ name: me, clientId, mic: true });
   setMicLabel();
   toast("Mic on. Huddle is listening.");
 }
+// Without a server speech model (AWS/Bedrock deploy), use the browser's own speech recognition.
+function startBrowserSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return toast("This browser can't transcribe speech; try Chrome, Edge or Safari", 6000);
+  const r = new SR();
+  r.continuous = true;
+  r.interimResults = false;
+  r.lang = navigator.language || "en-US";
+  r.onresult = async (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const text = e.results[i].isFinal && e.results[i][0].transcript.trim();
+      if (!text) continue;
+      inflight++; setMicLabel();
+      try { await fn("transcribe", { room, author: me, text }); lastSpokeAt = Date.now(); }
+      catch (err) { toast(`Transcription failed: ${err.message}`); }
+      finally { inflight--; setMicLabel(); }
+    }
+  };
+  r.onend = () => { if (mic.recog === r) try { r.start(); } catch { /* already restarting */ } };
+  mic.recog = r;
+  r.start();
+}
 function stopMic() {
+  const r = mic.recog;
+  mic.recog = null;
+  r?.stop();
   if (mic.frames.length) flush();
   mic.proc?.disconnect();
   mic.stream?.getTracks().forEach((t) => t.stop());

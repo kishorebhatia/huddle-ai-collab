@@ -1,88 +1,9 @@
 // POST { room, force? } -> folds new events into the room's living brief, starts agent pipelines for
 // actionable next steps, and turns spoken answers into decisions on pipelines waiting at a gate.
-import { cors, db, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
+import { background, cors, db, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
+import { judgeBrief, lessonsFor, recordEval } from "../_shared/evals.ts";
 import { createPipeline, invokeFn } from "../_shared/pipeline.ts";
-
-const item = (extra: Record<string, unknown> = {}) => ({
-  type: "OBJECT",
-  properties: {
-    text: { type: "STRING" },
-    by: { type: "STRING" },
-    refs: { type: "ARRAY", items: { type: "INTEGER" } },
-    ...extra,
-  },
-  required: ["text"],
-});
-
-const SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    goal: { type: "STRING" },
-    summary: { type: "STRING" },
-    changed: { type: "ARRAY", items: { type: "STRING" } },
-    decisions: { type: "ARRAY", items: item() },
-    questions: { type: "ARRAY", items: item() },
-    ideas: { type: "ARRAY", items: item() },
-    next_steps: {
-      type: "ARRAY",
-      items: item({
-        owner: { type: "STRING" },
-        type: { type: "STRING", enum: ["research", "prototype", "decide", "ask"] },
-      }),
-    },
-    new_pipelines: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          kind: { type: "STRING", enum: ["research", "build", "prototype"] },
-          title: { type: "STRING" },
-          goal: { type: "STRING" },
-        },
-        required: ["kind", "title", "goal"],
-      },
-    },
-    obsolete_pipeline_ids: { type: "ARRAY", items: { type: "INTEGER" } },
-    gate_answers: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          pipeline_id: { type: "INTEGER" },
-          decision: { type: "STRING", enum: ["approve", "skip", "stop"] },
-          answer: { type: "STRING" },
-        },
-        required: ["pipeline_id", "decision", "answer"],
-      },
-    },
-  },
-  required: ["goal", "summary", "changed", "decisions", "questions", "ideas", "next_steps", "new_pipelines", "obsolete_pipeline_ids", "gate_answers"],
-};
-
-const SYSTEM = `You are the shared brain of a small team working together live (often at a hackathon).
-You maintain ONE living brief of the session. You receive the current brief plus new events
-(speech transcripts, typed notes, links, whiteboard/sketch readings, findings posted by teammates'
-own AI assistants, and feedback on outputs). Each event is tagged [#id author kind].
-
-Rules:
-- EDIT the brief, don't append history. Merge duplicates, drop items that were resolved or reversed,
-  promote a question to a decision when the team settles it. Keep each list short (max ~8 items).
-- Every item carries refs: the event ids it came from. "by" = who said or owns it, when clear.
-- goal: one sentence on what the team is trying to achieve right now.
-- summary: 2-4 sentences on where things stand.
-- changed: 1-4 short bullets on what changed since the previous brief (empty if nothing material).
-- next_steps: concrete actions with an owner when someone volunteered; type research | prototype | decide | ask.
-- new_pipelines: agent work to START NOW for research/prototype next steps the team clearly wants,
-  that no existing pipeline (listed below) already covers. kind: "research" (find out only), "build"
-  (research then make it, review, publish), "prototype" (make it now). goal = a self-contained
-  instruction with every specific from the conversation. At most 2 per update; none while the team
-  is still exploring or undecided.
-- obsolete_pipeline_ids: ids of pipelines still "proposed" that the latest decisions made unnecessary.
-- gate_answers: for pipelines WAITING on a question, if a new event answers it (e.g. "yes publish it",
-  "target hackathon teams", "stop that one"), return pipeline_id, decision (approve | skip | stop) and
-  the answer in the speaker's words. Only when the answer is clear.
-- LOCKED decisions were fixed by the team: never reword, merge or drop them.
-- Never invent facts or decisions nobody stated.`;
+import { SYNTH_SCHEMA, SYNTH_SYSTEM } from "../_shared/prompts.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -134,9 +55,9 @@ Deno.serve(async (req) => {
           `LOCKED DECISIONS (the team locked these; keep each one in decisions exactly as written):\n${lockedText}\n\n` +
           `AGENT PIPELINES:\n${pipeText}\n\nNEW EVENTS:\n${evText || "(none)"}\n\nReturn the updated brief.`,
       }],
-      SCHEMA,
+      SYNTH_SCHEMA,
       SMART_MODEL,
-      SYSTEM,
+      SYNTH_SYSTEM + await lessonsFor("synthesize"),
       { thinkingConfig: { thinkingLevel: Deno.env.get("SYNTH_THINKING") ?? "low" } },
     );
 
@@ -164,6 +85,13 @@ Deno.serve(async (req) => {
       .select()
       .maybeSingle();
     if (!updated) return json({ conflict: true });
+    // Online eval: is the new brief faithful to what was said? (Arize annotation + lesson if low.)
+    if (evText) {
+      background(judgeBrief(evText, next).then((v) => recordEval({
+        name: "faithfulness", score: v.score, room, stage: "synthesize",
+        explanation: `${v.explanation}${(v.unsupported as string[] | undefined)?.length ? ` Unsupported: ${(v.unsupported as string[]).join("; ")}` : ""}`.slice(0, 900),
+      })).catch((e) => console.error("faithfulness eval", e)));
+    }
 
     const waiting = new Set((pipes ?? []).filter((p) => p.status === "waiting").map((p) => p.id));
     for (const a of answers) {

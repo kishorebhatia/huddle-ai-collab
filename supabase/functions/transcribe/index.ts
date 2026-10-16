@@ -77,11 +77,12 @@ const fixVocab = (s: string) => VOCAB.reduce((t, [re, to]) => t.replace(re, to),
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const { room, author, audio } = await req.json().catch(() => ({}));
-    if (!room || !audio) return json({ error: "room and audio required" }, 400);
-    if (wavRms(audio) < 0.003) return json({ skipped: "silence" });
+    // `text` instead of `audio`: the browser already transcribed it (its own speech recognition).
+    const { room, author, audio, text: said } = await req.json().catch(() => ({}));
+    if (!room || !(audio || said)) return json({ error: "room and audio (or text) required" }, 400);
+    if (!said && wavRms(audio) < 0.003) return json({ skipped: "silence" });
 
-    const out = await transcribe(audio);
+    const out = said ? { has_speech: true, text: String(said).slice(0, 4000) } : await transcribe(audio);
     const text = fixVocab(out.text ?? "").trim();
     if (!out.has_speech || text.length < 2) return json({ skipped: "no speech" });
 

@@ -247,6 +247,15 @@ body.dragging .c-stream { box-shadow: 0 0 0 3px var(--sage); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sage-2); flex: none; }
 .dot.failed { background: #C2412D; }
 .live-link { font-size: 12.5px; font-weight: 700; color: #1F6B45; }
+.proofs { display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 8px; padding: 0 12px 0 28px; }
+.proof { font-size: 11px; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--line); background: #fff; color: var(--ink-2); text-decoration: none; white-space: nowrap; }
+a.proof:hover { border-color: var(--ink-3); }
+.proof.anchor { border-color: #C9D7F2; background: #EEF3FC; color: #2A4A86; }
+.proof.anchor.live { background: #2A4A86; color: #fff; border-color: #2A4A86; font-weight: 700; }
+.proof.daytona { border-color: #D7CFF0; background: #F3F0FC; color: #4B3A8C; }
+.proof.arize { border-color: #F2D2C2; background: #FDF1EA; color: #8A3B17; }
+.proof.eval.ok { border-color: #D5E0C7; background: #EEF3E6; color: #3C5A2E; }
+.proof.eval.low { border-color: #F3B8B0; background: #FDECEA; color: #9B2C1E; }
 
 /* ---------- overlays ---------- */
 .ov { position: fixed; inset: 0; background: rgba(25,41,31,.45); display: grid; place-items: center; padding: 16px; z-index: 40; backdrop-filter: blur(3px); }

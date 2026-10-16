@@ -1,0 +1,40 @@
+{
+  "faithfulness": 0.881,
+  "completeness": 1,
+  "label": "baseline",
+  "at": "2026-10-16T16:35:14.269Z",
+  "cases": {
+    "decision-and-question": {
+      "faithfulness": 0.85,
+      "completeness": 1
+    },
+    "still-exploring": {
+      "faithfulness": 0.95,
+      "completeness": 1
+    },
+    "reversal": {
+      "faithfulness": 0.85,
+      "completeness": 1
+    },
+    "owners-and-next-steps": {
+      "faithfulness": 0.95,
+      "completeness": 1
+    },
+    "numbers-exact": {
+      "faithfulness": 0.85,
+      "completeness": 1
+    },
+    "noise": {
+      "faithfulness": 0.95,
+      "completeness": 1
+    },
+    "agent-request": {
+      "faithfulness": 0.75,
+      "completeness": 1
+    },
+    "disagreement": {
+      "faithfulness": 0.9,
+      "completeness": 1
+    }
+  }
+}

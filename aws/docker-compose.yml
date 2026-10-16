@@ -1,0 +1,56 @@
+# Huddle on one EC2 box: Postgres + PostgREST + a Deno gateway that speaks the Supabase protocols
+# (REST, functions, storage, realtime) so web/app.js and supabase/functions run unchanged.
+# Secrets come from aws/.env (generated on the server by aws/deploy.sh, never committed).
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: huddle
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/00_roles.sh:/docker-entrypoint-initdb.d/00_roles.sh:ro
+      - ../supabase/migrations/20261010000000_init.sql:/docker-entrypoint-initdb.d/10_init.sql:ro
+      - ../supabase/migrations/20261010010000_pipelines.sql:/docker-entrypoint-initdb.d/11_pipelines.sql:ro
+      - ../supabase/migrations/20261013000000_v4_features.sql:/docker-entrypoint-initdb.d/13_v4.sql:ro
+      - ../supabase/migrations/20261016000000_evals_lessons.sql:/docker-entrypoint-initdb.d/14_evals.sql:ro
+      - ./db/99_realtime.sql:/docker-entrypoint-initdb.d/99_realtime.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d huddle"]
+      interval: 3s
+      retries: 30
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@db:5432/huddle
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+
+  app:
+    image: denoland/deno:2.1.4
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy }, rest: { condition: service_started } }
+    working_dir: /app
+    command: ["run", "-A", "aws/server/main.ts"]
+    ports: ["80:8080"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://postgres:${PG_PASSWORD}@db:5432/huddle
+      POSTGREST_URL: http://rest:3000
+      SUPABASE_URL: http://127.0.0.1:8080
+      STORAGE_DIR: /data/storage
+    volumes:
+      - ..:/app:ro
+      - storage:/data/storage
+      - denocache:/deno-dir
+
+volumes:
+  pgdata:
+  storage:
+  denocache:

@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.brain-edit]
 verify_jwt = false
+
+[functions.eval-run]
+verify_jwt = false

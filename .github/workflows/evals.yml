@@ -1,0 +1,42 @@
+# Lean CI/CD for the agent's prompts:
+#   pull request → run the regression set with the PR's brief prompt, log it to Arize as an experiment,
+#                  and fail the check if faithfulness or completeness drop below evals/baseline.json
+#   push to redesign-v4 → same gate; if it passes, move the `live` branch to this commit.
+#                  The EC2 box follows `live` (aws/autodeploy.sh), so only commits that passed evals ship.
+name: evals
+
+on:
+  pull_request:
+    branches: [redesign-v4]
+  push:
+    branches: [redesign-v4]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.1.4
+      - name: Type-check the server and functions
+        run: deno check aws/server/main.ts supabase/functions/*/index.ts evals/run.ts
+      - name: Run evals (Arize experiment + gate)
+        env:
+          HUDDLE_URL: ${{ vars.HUDDLE_URL }}
+          EVAL_TOKEN: ${{ secrets.EVAL_TOKEN }}
+          ARIZE_API_KEY: ${{ secrets.ARIZE_API_KEY }}
+          ARIZE_SPACE_ID: ${{ vars.ARIZE_SPACE_ID }}
+        run: deno run -A evals/run.ts
+      - name: Promote to live
+        if: github.event_name != 'pull_request'
+        run: git push --force origin HEAD:refs/heads/live

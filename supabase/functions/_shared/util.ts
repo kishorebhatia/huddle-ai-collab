@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { bedrock } from "./bedrock.ts";
 
 export const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -26,6 +27,10 @@ export const SMART_MODEL = Deno.env.get("GEMINI_SMART_MODEL") ?? FAST_MODEL;
 export type GeminiResult = { text: string; raw: any };
 
 export async function gemini(body: Record<string, unknown>, model = FAST_MODEL): Promise<GeminiResult> {
+  // AI_PROVIDER=bedrock: same Gemini-shaped request, answered by Bedrock. Audio still needs Gemini.
+  if (Deno.env.get("AI_PROVIDER") === "bedrock" && !(GEMINI_KEY && hasAudio(body))) {
+    return await bedrock(body);
+  }
   if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY secret is not set");
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -41,6 +46,12 @@ export async function gemini(body: Record<string, unknown>, model = FAST_MODEL):
   const text = parts.filter((p: any) => !p.thought).map((p: any) => p.text ?? "").join("");
   return { text, raw };
 }
+
+// deno-lint-ignore no-explicit-any
+const hasAudio = (body: any) =>
+  (body?.contents ?? []).some((c: any) =>
+    (c.parts ?? []).some((p: any) => String((p.inline_data ?? p.inlineData)?.mime_type ?? (p.inline_data ?? p.inlineData)?.mimeType ?? "").startsWith("audio/"))
+  );
 
 /** Ask for JSON matching a schema and parse it. */
 export async function geminiJson<T>(

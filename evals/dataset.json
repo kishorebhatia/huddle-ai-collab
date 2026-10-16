@@ -1,0 +1,42 @@
+[
+  {
+    "id": "decision-and-question",
+    "note": "one clear decision, one open question",
+    "events": "[#1 Maya speech] OK so for the demo we're going with the phone layout first, desktop can wait.\n[#2 Sam speech] Agreed, phone first.\n[#3 Leo note] Who is presenting? We haven't decided.\n[#4 Maya speech] Also we need the pricing slide, I can do that by four."
+  },
+  {
+    "id": "still-exploring",
+    "note": "brainstorm only: nothing was decided",
+    "events": "[#1 Sam speech] What if we used Postgres instead of Dynamo?\n[#2 Leo speech] Maybe. Or we keep Dynamo and add a cache.\n[#3 Maya speech] Let's think about it after lunch, I'm not sure either way.\n[#4 Sam note] Options: Postgres, Dynamo plus cache"
+  },
+  {
+    "id": "reversal",
+    "note": "a decision made and then reversed",
+    "events": "[#1 Leo speech] Let's call the product Huddle.\n[#2 Maya speech] Yes, Huddle.\n[#3 Sam speech] Wait, Huddle is taken on the app store. Let's not decide the name today.\n[#4 Leo speech] Fine, name is open again."
+  },
+  {
+    "id": "owners-and-next-steps",
+    "note": "volunteered owners must be attributed correctly",
+    "events": "[#1 Maya speech] I'll write the API for uploads tonight.\n[#2 Leo speech] I can do the landing page.\n[#3 Sam note] Next: record a 2 minute demo video. Sam owns it.\n[#4 Maya speech] And we decided the deadline is Sunday noon."
+  },
+  {
+    "id": "numbers-exact",
+    "note": "numbers and versions must be copied exactly",
+    "events": "[#1 Sam speech] The judges said the limit is 3 minutes, not 5.\n[#2 Leo image] Whiteboard: v2.4.1 of the SDK, budget $1,200, 14 beta users.\n[#3 Maya speech] We go with SDK v2.4.1 then. Decided."
+  },
+  {
+    "id": "noise",
+    "note": "chit-chat should not create decisions or tasks",
+    "events": "[#1 Sam speech] Anyone want coffee?\n[#2 Leo speech] Haha yes please, oat milk.\n[#3 Maya speech] The wifi here is so slow today.\n[#4 Sam speech] I know, right."
+  },
+  {
+    "id": "agent-request",
+    "note": "a research request is a next step, not a decision",
+    "events": "[#1 Leo speech] Huddle, research how other teams price per-seat collaboration tools.\n[#2 Maya speech] Good idea, we need that before we pick a price.\n[#3 Sam speech] Decision: we launch with a free tier."
+  },
+  {
+    "id": "disagreement",
+    "note": "an unresolved disagreement must stay a question",
+    "events": "[#1 Maya speech] I think we should target hackathon teams.\n[#2 Sam speech] I disagree, agencies will actually pay.\n[#3 Leo speech] Both have a point. Let's ask a few people at the event.\n[#4 Maya note] Need: 5 quick interviews"
+  }
+]

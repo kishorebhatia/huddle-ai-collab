@@ -2,45 +2,12 @@
 // Status streams back via Realtime; pipeline jobs hand control back to the orchestrator when done.
 import { background, cors, db, FAST_MODEL, gemini, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
 import { invokeFn } from "../_shared/pipeline.ts";
+import { PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-
-const RESEARCH_SYSTEM = `You are a fast, rigorous research agent for a small team working live.
-ALWAYS run Google Search before answering, even if you think you know; every factual claim must
-come from a search result. Return a tight markdown brief:
-## Answer  (2-4 sentences, the direct answer with numbers and dates)
-## Key findings  (5-8 bullets, each with a specific fact)
-## Implications for the team  (2-4 bullets tied to their goal)
-## Open questions
-Prefer primary sources and recent information. Do not pad.`;
-
-const PROTOTYPE_SYSTEM = `You are a prototyping agent. Build a working, good-looking, single-file HTML prototype.
-Rules: ONE complete HTML document. Inline all CSS and JS. You may load libraries only from
-https://cdn.jsdelivr.net or https://unpkg.com with exact versions. Use realistic mock data; no backend.
-It must run inside a sandboxed iframe (no localStorage reliance, no alerts). Make the core interaction
-actually work. Ground the content in the research and the team's conversation provided.
-Keep it focused: one screen, under ~400 lines total, so it builds in well under a minute.
-Return ONLY the HTML document inside one \`\`\`html code block, then one line starting
-with "SUMMARY:" describing what it does and how to try it.`;
-
-const REVIEW_SYSTEM = `You are a demanding reviewer for a small team's agent pipeline. You did NOT write the work.
-Judge it against the pipeline goal and the team's conversation: does it answer what was asked, is it
-correct and specific, are claims sourced (research), does the core interaction plausibly work and
-match the ask (prototype)? Verdict "pass" if a busy teammate could use it as-is; "revise" only for
-concrete, fixable problems — then give precise revision_instructions. Set question_for_team ONLY if a
-decision genuinely belongs to the humans and blocks good work (e.g. target user, scope); else "".`;
-
-const REVIEW_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    verdict: { type: "STRING", enum: ["pass", "revise"] },
-    score: { type: "INTEGER", description: "Quality from 1 (unusable) to 10 (excellent)." },
-    strengths: { type: "ARRAY", items: { type: "STRING" } },
-    issues: { type: "ARRAY", items: { type: "STRING" } },
-    revision_instructions: { type: "STRING" },
-    question_for_team: { type: "STRING" },
-  },
-  required: ["verdict", "score", "strengths", "issues", "revision_instructions", "question_for_team"],
-};
+import { lessonsFor, recordEval, judgeGrounding } from "../_shared/evals.ts";
+import { anchorOn, closeSession, openSession, readPage, screenshot, smokeTest } from "../_shared/anchor.ts";
+import { checkScripts, daytonaOn, deploySite, upload, type Sandbox } from "../_shared/daytona.ts";
+import { current, span } from "../_shared/trace.ts";
 
 function extractHtml(text: string) {
   const fenced = text.match(/```html\s*([\s\S]*?)```/i);
@@ -114,11 +81,132 @@ async function deployToVercel(html: string, name: string): Promise<string> {
   throw new Error("Vercel deploy did not finish in 60 s");
 }
 
+async function setMeta(sb: SupabaseClient, jobId: number, patch: Record<string, unknown>) {
+  const { data } = await sb.from("jobs").select("meta").eq("id", jobId).maybeSingle();
+  await sb.from("jobs").update({ meta: { ...(data?.meta ?? {}), ...patch } }).eq("id", jobId);
+}
+
+/** Store a file in the public "board" bucket and return its URL. */
+async function store(path: string, bytes: Uint8Array, type: string) {
+  const base = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const r = await fetch(`${base}/storage/v1/object/board/${path}`, {
+    method: "POST", headers: { "content-type": type, authorization: `Bearer ${key}`, apikey: key }, body: bytes,
+  });
+  if (!r.ok) throw new Error(`storage ${r.status}`);
+  return `${(Deno.env.get("PUBLIC_SITE_URL") ?? base ?? "").replace(/\/$/, "")}/storage/v1/object/public/board/${path}`;
+}
+
+/** Anchor reads the top sources in a real browser; a judge checks the brief against them. */
+async function verifyResearch(job: any, text: string, sources: { title: string; url: string }[]) {
+  const top = sources.slice(0, 3);
+  const read = await Promise.allSettled(top.map((s) => readPage(s.url)));
+  const pages = top.map((s, i) => ({ url: s.url, text: read[i].status === "fulfilled" ? (read[i] as PromiseFulfilledResult<string>).value : "" }))
+    .filter((p) => p.text.length > 200);
+  if (!pages.length) return { note: "\n\n> Anchor couldn't open the source pages, so this brief is unverified.", read: [] as string[] };
+  const v = await judgeGrounding(text, pages);
+  await recordEval({
+    name: "groundedness", score: v.score, explanation: v.explanation, room: job.room_id,
+    jobId: job.id, pipelineId: job.pipeline_id ?? undefined, stage: "research", task: job.prompt,
+  });
+  const unsupported = (v.unsupported_claims as string[] | undefined) ?? [];
+  const note = `\n\n### Checked by Anchor\nRead ${pages.length} source page${pages.length > 1 ? "s" : ""} in a cloud browser. ` +
+    `Groundedness ${v.score.toFixed(2)}: ${v.explanation}` +
+    (unsupported.length ? `\n\nNot found in the sources:\n${unsupported.slice(0, 5).map((c) => `- ${c}`).join("\n")}` : "");
+  return { note, read: pages.map((p) => p.url) };
+}
+
+/** Anchor uses the live prototype like a person would; the room can watch it in the live view. */
+async function smoke(sb: SupabaseClient, job: any, url: string, goal: string, summary: string) {
+  const session = await openSession(url);
+  await setMeta(sb, job.id, { live_view_url: session.liveViewUrl, anchor_session: session.id });
+  try {
+    const res = await smokeTest(session.id,
+      `You are QA-testing a web prototype that is already open. It was built for: ${goal.slice(0, 500)}\n` +
+      `What it should do: ${summary.slice(0, 400)}\n` +
+      `Try its core interaction the way a first-time user would (type, click, filter, etc.). ` +
+      `Report whether it actually works, what you did, what you saw, and any problems (errors, blank areas, controls that do nothing).`);
+    let shot = "";
+    try {
+      shot = await store(`${job.room_id}/smoke/${job.id}-${Date.now()}.png`, await screenshot(session.id), "image/png");
+    } catch (e) { console.warn("screenshot", e); }
+    return { ...res, shot };
+  } finally {
+    await closeSession(session.id);
+  }
+}
+
+/** Publish on Daytona: Node checks the scripts in the sandbox, Anchor tests the live URL, one repair if either fails. */
+async function hostOnDaytona(sb: SupabaseClient, job: any, proto: any, goal: string) {
+  let html: string = proto.output_html;
+  const summary: string = proto.output_md ?? "";
+  const sandbox: Sandbox = await deploySite({ "index.html": html }, { room: String(job.room_id).slice(0, 60), pipeline: String(job.pipeline_id ?? "") });
+  await setMeta(sb, job.id, { sandbox_id: sandbox.id, sandbox_url: sandbox.url });
+  for (let attempt = 0; ; attempt++) {
+    const check = await checkScripts(sandbox, html);
+    await recordEval({
+      name: "build_success", score: check.ok ? 1 : 0, room: job.room_id, jobId: job.id, pipelineId: job.pipeline_id,
+      explanation: check.ok ? `Scripts pass node --check in the Daytona sandbox${attempt ? " after one repair" : ""}.` : `node --check failed: ${check.log.slice(0, 400)}`,
+      task: goal,
+    });
+    const t = await smoke(sb, job, sandbox.url, goal, summary).catch((e) => {
+      // No browser available is not a broken prototype: publish, and say the test didn't run.
+      console.error("smoke test", e);
+      return null;
+    });
+    if (!t) {
+      await setMeta(sb, job.id, { live_view_url: null, smoke_error: "browser test could not run" });
+      return { url: sandbox.url, works: check.ok, repaired: attempt > 0, untested: true };
+    }
+    await recordEval({
+      name: "smoke_test", score: t.works ? 1 : 0, room: job.room_id, jobId: job.id, pipelineId: job.pipeline_id,
+      explanation: `${t.works ? "Works" : "Broken"}${attempt ? " (after repair)" : ""}. Tried: ${t.tried.slice(0, 300)} Saw: ${t.observed.slice(0, 300)}` +
+        (t.problems.length ? ` Problems: ${t.problems.join("; ").slice(0, 300)}` : ""),
+      task: goal,
+    });
+    await sb.from("events").insert({
+      room_id: job.room_id, author: "huddle", kind: "image", image_url: t.shot || null,
+      text: `**Smoke test ${t.works ? "passed" : "failed"}${attempt ? " after repair" : ""}** (Anchor, on the Daytona URL)\n\n${t.observed.slice(0, 500)}`,
+      meta: { job_id: job.id, smoke: true },
+    });
+    await setMeta(sb, job.id, { live_view_url: null, screenshot_url: t.shot || null, smoke: t });
+    if ((check.ok && t.works) || attempt >= 1) return { url: sandbox.url, works: check.ok && t.works, repaired: attempt > 0 };
+
+    // Self-repair: give the model what Node and the browser saw, then redeploy into the same sandbox.
+    const { text } = await gemini({
+      systemInstruction: { parts: [{ text: PROTOTYPE_SYSTEM }] },
+      contents: [{ role: "user", parts: [{ text:
+        `This prototype was deployed and tested, and it is broken. Fix it; keep everything that works.\n` +
+        (check.ok ? "" : `NODE --check OUTPUT:\n${check.log}\n`) +
+        `BROWSER TEST: tried: ${t.tried}\nsaw: ${t.observed}\nproblems: ${t.problems.join("; ")}\n\n` +
+        `CURRENT HTML:\n\`\`\`html\n${html}\n\`\`\`` }] }],
+    }, SMART_MODEL);
+    const fixed = extractHtml(text);
+    if (!fixed) return { url: sandbox.url, works: false, repaired: false };
+    html = fixed;
+    await upload(sandbox, "index.html", html);
+    await sb.from("jobs").update({ output_html: html, output_md: `${summary}\n\nRepaired after the smoke test.`.trim(), updated_at: now() }).eq("id", proto.id);
+    await sb.from("events").insert({
+      room_id: job.room_id, author: "huddle", kind: "system",
+      text: `Repairing the prototype from what the browser saw, then testing again.`, meta: { job_id: job.id },
+    });
+  }
+}
+
 async function run(jobId: number) {
   const sb = db();
   const { data: job } = await sb.from("jobs").select("*").eq("id", jobId).single();
   if (!job) return;
-  await sb.from("jobs").update({ status: "running", error: null, updated_at: now() }).eq("id", jobId);
+  return await span(`stage.${job.kind}`, "AGENT", { "input.value": `${job.title}\n${job.prompt}`, metadata: { job_id: jobId, kind: job.kind } },
+    (s) => runJob(sb, job, s));
+}
+
+async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string, unknown>) => void }) {
+  const jobId = job.id;
+  const tr = current();
+  await sb.from("jobs").update({
+    status: "running", error: null, updated_at: now(), meta: { ...(job.meta ?? {}), trace_id: tr?.traceId, span_id: tr?.spanId },
+  }).eq("id", jobId);
 
   try {
     const ctx = await contextPack(sb, job);
@@ -136,7 +224,7 @@ async function run(jobId: number) {
 
     if (job.kind === "research") {
       const { text, raw } = await gemini({
-        systemInstruction: { parts: [{ text: RESEARCH_SYSTEM }] },
+        systemInstruction: { parts: [{ text: RESEARCH_SYSTEM + await lessonsFor("research") }] },
         contents: [{ role: "user", parts: [{ text: userText }] }],
         tools: [{ google_search: {} }],
         generationConfig: { thinkingConfig: { thinkingLevel: "low" } },
@@ -147,11 +235,17 @@ async function run(jobId: number) {
         .map((c: any) => c.web)
         .filter((w: any) => w?.uri && !seen.has(w.uri) && seen.add(w.uri))
         .map((w: any) => ({ title: w.title ?? w.uri, url: w.uri }));
-      const note = sources.length ? "" : "\n\n> No web sources came back for this brief — treat its facts as unverified.";
+      let note = sources.length ? "" : "\n\n> No web sources came back for this brief — treat its facts as unverified.";
+      if (sources.length && anchorOn()) {
+        const v = await verifyResearch(job, text, sources);
+        note += v.note;
+        for (const src of sources) if (v.read.includes(src.url)) (src as any).read_by_anchor = true;
+      }
       await sb.from("jobs").update({ status: "done", output_md: text + note, sources, updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": text + note });
     } else if (job.kind === "prototype") {
       const { text } = await gemini({
-        systemInstruction: { parts: [{ text: PROTOTYPE_SYSTEM }] },
+        systemInstruction: { parts: [{ text: PROTOTYPE_SYSTEM + await lessonsFor("prototype") }] },
         contents: [{ role: "user", parts: [{ text: userText }] }],
         generationConfig: { thinkingConfig: { thinkingLevel: Deno.env.get("PROTOTYPE_THINKING") ?? "low" } },
       }, SMART_MODEL);
@@ -177,8 +271,14 @@ async function run(jobId: number) {
         (r.verdict === "revise" ? `Revision asked: ${r.revision_instructions}\n\n` : "") +
         (r.question_for_team ? `Question for the team: ${r.question_for_team}` : "");
       await sb.from("jobs").update({ status: "done", review: r, output_md: md, updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": md });
+      await recordEval({
+        name: "review_score", score: r.score / 10, room: job.room_id, jobId, pipelineId: job.pipeline_id ?? undefined,
+        stage: target.kind, task: job.prompt,
+        explanation: `${r.verdict}: ${(r.issues ?? []).join("; ") || (r.strengths ?? []).join("; ")}`.slice(0, 900),
+      });
     } else if (job.kind === "host") {
-      const { data: proto } = await sb.from("jobs").select("id, output_html")
+      const { data: proto } = await sb.from("jobs").select("id, output_html, output_md")
         .eq("pipeline_id", job.pipeline_id).eq("kind", "prototype").eq("status", "done")
         .order("id", { ascending: false }).limit(1).maybeSingle();
       if (!proto?.output_html) throw new Error("no prototype to host");
@@ -187,14 +287,22 @@ async function run(jobId: number) {
       // Vercel projects may have Deployment Protection on, which you would turn off yourself.
       const site = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
       let url: string;
-      if (Deno.env.get("HOST_MODE") === "vercel" || !site) {
+      let note = "";
+      const mode = Deno.env.get("HOST_MODE") ?? (daytonaOn() ? "daytona" : "");
+      if (mode === "daytona") {
+        const { data: pipe } = await sb.from("pipelines").select("goal").eq("id", job.pipeline_id).maybeSingle();
+        const d = await hostOnDaytona(sb, job, proto, pipe?.goal ?? job.prompt);
+        url = d.url;
+        note = (d as { untested?: boolean }).untested ? " (browser test could not run)"
+          : d.works ? (d.repaired ? " (repaired once, smoke test passed)" : " (smoke test passed)") : " (smoke test still failing)";
+      } else if (mode === "vercel" || !site) {
         const slug = (job.room_id as string).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
         url = await deployToVercel(proto.output_html, `huddle-${slug}-p${job.pipeline_id}`);
       } else {
         url = `${site}/p.html?id=${proto.id}`;
       }
       await sb.from("jobs").update({
-        status: "done", output_md: `Live at ${url}`, sources: [{ title: "Live prototype", url }], updated_at: now(),
+        status: "done", output_md: `Live at ${url}${note}`, sources: [{ title: "Live prototype", url }], updated_at: now(),
       }).eq("id", jobId);
     } else {
       throw new Error(`unknown job kind ${job.kind}`);
