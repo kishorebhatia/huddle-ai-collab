@@ -53,6 +53,18 @@ export async function createPipeline(
   opts: { room: string; title: string; goal: string; kind: string; created_by?: string; origin_event_id?: number },
 ) {
   const room = await getRoom(sb, opts.room);
+  // Don't start the same work twice: the brief update and a request often name the same next step.
+  const words = (t: string) => new Set(t.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2));
+  const mine = words(opts.title);
+  const { data: active } = await sb.from("pipelines").select("id, title, status")
+    .eq("room_id", opts.room).in("status", ["proposed", "running", "waiting"])
+    .gte("created_at", new Date(Date.now() - 30 * 60_000).toISOString());
+  const twin = (active ?? []).find((p: { title: string }) => {
+    const theirs = words(p.title);
+    const shared = [...mine].filter((w) => theirs.has(w)).length;
+    return shared / Math.max(1, Math.min(mine.size, theirs.size)) >= 0.8;
+  });
+  if (twin) return twin;
   // In the operator room every request is a change to Huddle itself.
   if (opts.room === OPERATOR_ROOM) opts = { ...opts, kind: "improve" };
   const stages = STAGE_SETS[opts.kind] ?? STAGE_SETS.research;
