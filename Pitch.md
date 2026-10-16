@@ -21,8 +21,8 @@ Small teams lose hours between "we should build X" and a working link, and nobod
 |---|---|---|
 | AWS | EC2 and CloudFront host the app. Bedrock runs every model (Claude, Nova). | App, data and models live in one account. |
 | Daytona | Runs each build with its keys in a sandbox-only `.env`, type-checks code, scans for secrets. | Agent code runs for real. Keys never reach the browser. |
-| Anchor | Reads research sources and uses each deployed app like a new user, on a live view. | Every link passes a browser test first. |
-| Arize | Traces each pipeline, scores seven evals, gates prompt changes in CI. | Changes that lower scores never ship. |
+| Anchor | Reads research sources and uses each deployed app like a new user, on a live view. | Each app gets a browser test before the room sees its link. |
+| Arize | Traces each pipeline, scores seven evals, gates prompt changes in CI. | A prompt change that lowers the brief's eval scores can't merge. |
 | ElevenLabs | Voice agents Huddle builds run on ElevenLabs Agents. | Teams demo real voice products the same day. |
 
 ## X-factors
