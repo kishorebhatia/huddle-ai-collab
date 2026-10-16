@@ -171,7 +171,8 @@ A spoken request on the live site went through every stage in **140 seconds**:
 3. Prototype on Claude Sonnet 5.5, then review: 9/10.
 4. Daytona sandbox: `node --check` passed on every script.
 5. Anchor smoke test on the live Daytona URL: passed, with a screenshot in the stream.
-6. Live: https://3000-ef7fc9c1-53f9-4a63-a0a9-5f79cf9e6f1a.daytonaproxy01.net
+6. Live: https://3000-ef7fc9c1-53f9-4a63-a0a9-5f79cf9e6f1a.daytonaproxy01.net (Daytona sandbox, now stopped). The permanent copy
+   is on GitHub Pages: https://huddle-public-repos.github.io/huddle-judges-demo/prototypes/hackathon-judge-scoring-sheet-tool/
 
 The whole run is one Arize trace, with scores attached to each stage. In CI, a weakened brief prompt
 dropped faithfulness from 0.88 to 0.83 and failed the check. Setup and config are in

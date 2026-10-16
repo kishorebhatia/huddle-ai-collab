@@ -206,21 +206,29 @@ build stages added.
 
 ## GitHub-backed rooms
 
-1. **Sign in with GitHub** (OAuth App). The default scopes are `public_repo user:email`; `repo` is
-   requested only when a room is turned private.
-2. **Publish to GitHub** previews the exact files, then:
-   - creates the repo from `kishorebhatia/huddle-room-template`;
+1. **Public rooms need no sign-in.** Each public room is saved to its own repository in the
+   `Huddle-public-repos` org: `Huddle-public-repos/<room-name>-<room-id>`, from the org's
+   `huddle-room-template`.
+   - The repo is created the first time the room finishes research or a build, never just because
+     someone opened a link.
+   - It updates every time a pipeline finishes, or when someone presses **Save to GitHub**.
+   - Commits are authored by Huddle, with signed-in members as co-authors.
+   - GitHub Pages serves the prototypes permanently, e.g.
+     https://huddle-public-repos.github.io/huddle-judges-demo/
+   - Env: `GITHUB_ORG`, `GITHUB_ORG_TOKEN`, a fine-grained token with Administration, Contents,
+     Pages and Workflows (read and write) on the org. The demo token expires 2026-10-23.
+2. **Sign in with GitHub** is only for private rooms. Making a room private turns its org repo private
+   and adds the owner (admin) and members as collaborators.
+3. **Publishing** (automatic or by the button) previews the exact files, then:
+   - creates the repo from the org template;
    - redacts secrets (patterns, then `gitleaks` in Daytona);
    - commits only what changed, with members as co-authors;
    - logs a `secret_free` eval.
-3. **Private rooms** are visible only to the owner and invited GitHub users. RLS (`room_visible`)
+4. **Private rooms** are visible only to the owner and invited GitHub users. RLS (`room_visible`)
    guards REST; the gateway guards function calls and realtime joins.
 
 Env: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TEMPLATE`. The OAuth callback is
 `<site>/auth/github/callback`.
-
-**Next:** public rooms backed automatically by the `Huddle-public-repos` org, with no sign-in. Sign-in
-becomes needed only for private (paid) rooms.
 
 ## Huddle improving Huddle (operator room)
 
