@@ -11,9 +11,9 @@ Huddle runs it as a pipeline of agent stages. Each of the four platforms owns a 
 | Platform | What it does in Huddle | Value it adds | Status (Oct 16) |
 |---|---|---|---|
 | **AWS** | Runs the whole app. EC2 hosts the database, the API and the agent functions; CloudFront serves it over HTTPS. Bedrock runs the AI: Claude Haiku 4.5 for briefs and reviews, Claude Sonnet 5.5 for prototypes, and Nova 2 Lite for web-grounded research and video. | One account for the app, its data and its models. No Supabase and no Gemini key required. | **Live, tested end to end** |
-| **Anchor Browser** | A cloud browser for the agent. Research opens and reads the top source pages. After a deploy, it opens the prototype's public URL and uses it like a person would. | Research cites pages the agent actually read. Prototypes are tested by using them, not by reading their code. The room can watch the browser work live. | Planned |
-| **Daytona** | A sandbox where agent-built prototypes are installed, started and given a public URL. If a build fails, its log goes back to the model for one repair. | The agent ships running apps with real links, not mockups, and it fixes its own failed builds. | Planned |
-| **Arize** | Traces every pipeline, stage and model call, and scores outputs with evals. Low scores become lessons the agent reuses and test cases for CI. | You can see why the agent did what it did. Quality is measured on every run, and a prompt change can't ship if it lowers the scores. | Planned |
+| **Anchor Browser** | A cloud browser for the agent. Research opens and reads the top source pages. After a deploy, it opens the prototype's public URL and uses it like a person would. | Research cites pages the agent actually read. Prototypes are tested by using them, not by reading their code. The room can watch the browser work live. | **Live**: groundedness 0.85–0.95 against pages read; smoke tests pass on the Daytona URL |
+| **Daytona** | A sandbox where agent-built prototypes are installed, started and given a public URL. If a build fails, its log goes back to the model for one repair. | The agent ships running apps with real links, not mockups, and it fixes its own failed builds. | **Live**: sandbox serving in about 20 s; `node --check` runs in the sandbox |
+| **Arize** | Traces every pipeline, stage and model call, and scores outputs with evals. Low scores become lessons the agent reuses and test cases for CI. | You can see why the agent did what it did. Quality is measured on every run, and a prompt change can't ship if it lowers the scores. | **Live**: traces, 6 eval types, lessons, CI gate |
 
 **The loop in one line:** Anchor gathers evidence → Bedrock writes → Daytona runs it → Anchor tests it
 → Arize scores it → lessons and regression tests feed the next run.
@@ -39,7 +39,7 @@ browser ──HTTPS──► CloudFront ──► EC2 (t3.medium, Docker Compose
 | Video and PDF | Nova 2 Lite / Claude |
 | Live speech | The browser's own speech recognition, since no Bedrock model accepts audio |
 
-**Measured run on the live site.** One spoken request went through every stage in about four minutes:
+**Measured run on the live site (AWS only, before the integrations).** One spoken request went through every stage in about four minutes:
 
 1. Research returned five web sources.
 2. A review scored the research.
@@ -50,7 +50,7 @@ browser ──HTTPS──► CloudFront ──► EC2 (t3.medium, Docker Compose
 
 Updating the brief takes about 3.5 seconds and reading an image about 1.2 seconds.
 
-## The planned pipeline
+## The pipeline (live since Oct 16)
 
 ```
 spoken request
@@ -113,3 +113,19 @@ Every step is traced to Arize. Low scores become lessons and regression tests.
 - **Open rooms.** Anyone with a room link can read and write it.
 - **One server.** Uploads live on the instance's disk and there are no backups. Stopping the instance
   changes its address. S3 plus an Elastic IP is the next step.
+
+## Measured with all four platforms (Oct 16)
+
+A spoken request on the live site went through every stage in **140 seconds**:
+
+1. Research on Nova grounding; Anchor read the top sources and groundedness scored 0.95.
+2. Review: 8/10.
+3. Prototype on Claude Sonnet 5.5, then review: 9/10.
+4. Daytona sandbox: `node --check` passed on every script.
+5. Anchor smoke test on the live Daytona URL: passed, with a screenshot in the stream.
+6. Live: https://3000-ef7fc9c1-53f9-4a63-a0a9-5f79cf9e6f1a.daytonaproxy01.net
+
+The whole run is one Arize trace, with scores attached to each stage. In CI, a weakened brief prompt
+dropped faithfulness from 0.88 to 0.83 and failed the check. Setup and config are in
+[README-AWS.md](README-AWS.md).
+
