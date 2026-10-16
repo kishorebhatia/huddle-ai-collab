@@ -222,6 +222,20 @@ Env: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TEMPLATE`. The OAuth ca
 **Next:** public rooms backed automatically by the `Huddle-public-repos` org, with no sign-in. Sign-in
 becomes needed only for private (paid) rooms.
 
+## Huddle improving Huddle (operator room)
+
+`huddle-operator` (env `OPERATOR_ROOM`) is a private room owned by the admin (`ADMIN_LOGINS`, default
+`kishorebhatia`), created on the admin's first GitHub sign-in.
+
+Every request there becomes an `improve → review → pr` pipeline (see `_shared/operator.ts`):
+1. **Evidence:** low evals, lessons and failed pipelines from the last 24 h.
+2. **Change:** a minimal edit to `supabase/functions/_shared/prompts.ts`.
+3. **Check:** `deno check` in a Daytona sandbox with Deno 2.1.4, the same as CI.
+4. **Pull request:** a PR against `redesign-v4` (env `SELF_REPO`, `SELF_BRANCH`), opened with the
+   admin's token. CI's eval gate runs on it.
+
+Nothing merges or deploys without a human. Only `prompts.ts` changes for now.
+
 ## Using it
 
 The same as [README.md](README.md#using-it), plus:

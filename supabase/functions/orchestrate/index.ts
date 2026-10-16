@@ -47,6 +47,8 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
   const answers = (p.meta?.answers ?? []).map((a: any) => `- Q: ${a.q}\n  A: ${a.a}`).join("\n");
   const STAGE_ONLY: Record<string, string> = {
     plan: "Plan how to deliver the goal end to end. Do not do the work yet.",
+    improve: "Change Huddle's prompts to fix what the evidence shows. Only prompts.ts.",
+    pr: "Open a pull request with the reviewed change.",
     research: "Do ONLY the research. Do not write code, HTML or page copy — a later stage builds it.",
     review: "Review ONLY the output of the stage just before this one.",
     prototype: p.meta?.plan?.needs_backend
@@ -182,7 +184,7 @@ async function step(sb: SupabaseClient, pid: number) {
       return { revising: p.stages[s - 1] };
     }
   }
-  if (p.stages[s] === "host" && cur.output_md) {
+  if ((p.stages[s] === "host" || p.stages[s] === "pr") && cur.output_md) {
     p.host_url = cur.output_md.match(/https?:\/\/\S+/)?.[0] ?? null;
     await save(sb, p.id, { host_url: p.host_url });
   }

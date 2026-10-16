@@ -43,6 +43,15 @@ export async function handleAuth(req: Request, url: URL, sql: ReturnType<typeof 
       on conflict (github_id) do update set login = excluded.login, name = excluded.name, avatar_url = excluded.avatar_url,
         email = excluded.email, token_enc = excluded.token_enc, scopes = excluded.scopes, updated_at = now()
       returning id, login, name, avatar_url, scopes`;
+    // The admin owns the operator room (Huddle improving Huddle); it is private to them and their invitees.
+    const admins = (Deno.env.get("ADMIN_LOGINS") ?? "kishorebhatia").toLowerCase().split(",").map((x) => x.trim());
+    if (admins.includes(String(row.login).toLowerCase())) {
+      const op = Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator";
+      await sql`insert into public.rooms (id, name, owner_id, visibility) values (${op}, 'Huddle operator', ${row.id}, 'private')
+        on conflict (id) do update set owner_id = coalesce(public.rooms.owner_id, excluded.owner_id), visibility = 'private'`;
+      await sql`insert into public.room_members (room_id, user_id, login, role) values (${op}, ${row.id}, ${row.login}, 'owner')
+        on conflict (room_id, login) do update set user_id = excluded.user_id`;
+    }
     // Invitations made by GitHub login become real memberships now that we know who this is.
     await sql`update public.room_members set user_id = ${row.id} where lower(login) = lower(${row.login}) and user_id is null`;
     const jwt = await signJwt({ role: "authenticated", sub: String(row.id), login: row.login });

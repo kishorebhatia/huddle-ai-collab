@@ -2,7 +2,8 @@
 // Status streams back via Realtime; pipeline jobs hand control back to the orchestrator when done.
 import { background, cors, db, FAST_MODEL, gemini, geminiJson, json, SMART_MODEL } from "../_shared/util.ts";
 import { invokeFn } from "../_shared/pipeline.ts";
-import { APP_SYSTEM, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
+import { APP_SYSTEM, IMPROVE_SYSTEM, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM } from "../_shared/prompts.ts";
+import { adminToken, currentPrompts, evidence, openPr, PROMPTS_PATH, typeCheck } from "../_shared/operator.ts";
 import { planGoal, planMarkdown, type Plan } from "../_shared/plan.ts";
 import { resolveSecrets } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -299,7 +300,44 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       ? await sb.from("pipelines").select("goal, meta").eq("id", job.pipeline_id).maybeSingle() : { data: null };
     const plan: Plan | undefined = pipe?.meta?.plan;
 
-    if (job.kind === "plan") {
+    if (job.kind === "improve") {
+      // Huddle improving Huddle: evidence → smallest prompt change → deno check in Daytona (one fix if it fails).
+      const { token } = await adminToken(sb);
+      const cur = await currentPrompts(token);
+      const ev = await evidence(sb);
+      let ask = `OPERATOR REQUEST: ${pipe?.goal ?? job.prompt}\n${parentBlock}\n\nEVIDENCE FROM PRODUCTION:\n${ev}\n\nCURRENT FILE:\n\`\`\`file:${PROMPTS_PATH}\n${cur.content}\n\`\`\``;
+      let content = "", text = "", check = { ok: false, log: "" };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        ({ text } = await gemini({ systemInstruction: { parts: [{ text: IMPROVE_SYSTEM }] }, contents: [{ role: "user", parts: [{ text: ask }] }] }, SMART_MODEL));
+        content = extractFiles(text)[PROMPTS_PATH] ?? "";
+        if (!content) throw new Error("the change didn't include prompts.ts");
+        check = await typeCheck(content);
+        if (check.ok) break;
+        ask += `\n\nYOUR LAST VERSION FAILED deno check:\n${check.log}\nFix it and output the complete file again.`;
+      }
+      const changes = [...text.matchAll(/^CHANGE:\s*(.+)$/gim)].map((m) => m[1].trim());
+      const expect = text.match(/^EXPECT:\s*(.+)$/im)?.[1]?.trim() ?? "";
+      const md = `**Proposed change to \`${PROMPTS_PATH}\`**\n\n${changes.map((c) => `- ${c}`).join("\n") || "- (no summary)"}\n\n` +
+        `**Expected effect:** ${expect || "n/a"}\n\n**Type check in Daytona:** ${check.ok ? "passed" : `failed\n\n\`\`\`\n${check.log.slice(-1200)}\n\`\`\``}`;
+      if (!check.ok) throw new Error(`the change doesn't type-check: ${check.log.slice(-300)}`);
+      await sb.from("jobs").update({ status: "done", files: { [PROMPTS_PATH]: content }, output_md: md, meta: { ...(job.meta ?? {}), base_sha: cur.sha, changes, expect }, updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": md });
+    } else if (job.kind === "pr") {
+      const { data: change } = await sb.from("jobs").select("id, files, meta, output_md").eq("pipeline_id", job.pipeline_id)
+        .eq("kind", "improve").eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
+      if (!change?.files?.[PROMPTS_PATH]) throw new Error("no reviewed change to propose");
+      const { data: review } = await sb.from("jobs").select("review").eq("pipeline_id", job.pipeline_id).eq("kind", "review").eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
+      const { token } = await adminToken(sb);
+      const changes: string[] = change.meta?.changes ?? [];
+      const title = `Huddle: ${(changes[0] ?? pipe?.goal ?? "improve prompts").replace(/[.\s]+$/, "").slice(0, 80)}`;
+      const body = `Proposed by Huddle's operator room from production evidence (Arize evals, lessons, failed pipelines).\n\n` +
+        `${change.output_md}\n\n**Review:** ${review?.review ? `${review.review.verdict}, ${review.review.score}/10` : "n/a"}\n\n` +
+        `The \`evals\` check runs the regression set with this prompt and logs it to Arize as an experiment. Merging deploys it.\n\n` +
+        `🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
+      const pr = await openPr(token, change.files[PROMPTS_PATH], change.meta?.base_sha, title, body);
+      await sb.from("jobs").update({ status: "done", output_md: `Pull request #${pr.number}: ${pr.url}`, sources: [{ title: `PR #${pr.number}`, url: pr.url }], updated_at: now() }).eq("id", jobId);
+      s.set({ "output.value": pr.url });
+    } else if (job.kind === "plan") {
       const p = await planGoal(pipe?.goal ?? job.prompt, `\nCONTEXT:\n${ctx.text.slice(0, 6000)}`);
       const md = planMarkdown(p);
       await sb.from("jobs").update({ status: "done", review: p, output_md: md, updated_at: now() }).eq("id", jobId);

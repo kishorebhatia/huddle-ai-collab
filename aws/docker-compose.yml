@@ -19,6 +19,7 @@ services:
       - ../supabase/migrations/20261016100000_room_names.sql:/docker-entrypoint-initdb.d/15_room_names.sql:ro
       - ../supabase/migrations/20261016010000_github_rooms.sql:/docker-entrypoint-initdb.d/16_github_rooms.sql:ro
       - ../supabase/migrations/20261016020000_goal_to_live.sql:/docker-entrypoint-initdb.d/17_goal_to_live.sql:ro
+      - ../supabase/migrations/20261016030000_operator.sql:/docker-entrypoint-initdb.d/18_operator.sql:ro
       - ./db/99_realtime.sql:/docker-entrypoint-initdb.d/99_realtime.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d huddle"]

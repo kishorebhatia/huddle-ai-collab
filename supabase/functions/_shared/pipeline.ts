@@ -6,7 +6,10 @@ export const STAGE_SETS: Record<string, string[]> = {
   research: ["plan", "research", "review"],
   build: ["plan", "research", "review", "prototype", "review", "host"],
   prototype: ["plan", "prototype", "review", "host"],
+  // The operator room: change Huddle's own prompts, review the change, open a pull request.
+  improve: ["improve", "review", "pr"],
 };
+export const OPERATOR_ROOM = Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator";
 
 /** The stages a plan calls for. */
 export function stagesFor(plan: { deliverable?: string; needs_research?: boolean }): string[] {
@@ -50,6 +53,8 @@ export async function createPipeline(
   opts: { room: string; title: string; goal: string; kind: string; created_by?: string; origin_event_id?: number },
 ) {
   const room = await getRoom(sb, opts.room);
+  // In the operator room every request is a change to Huddle itself.
+  if (opts.room === OPERATOR_ROOM) opts = { ...opts, kind: "improve" };
   const stages = STAGE_SETS[opts.kind] ?? STAGE_SETS.research;
   const status = room.mode === "suggest" || room.paused ? "proposed" : "running";
   const { data: p, error } = await sb.from("pipelines").insert({

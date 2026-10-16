@@ -90,6 +90,9 @@ Every step is traced to Arize. Low scores become lessons and regression tests.
 - **Secret scanning:** before anything is pushed to GitHub, `gitleaks` runs over the exact files in
   a dedicated Daytona sandbox, after Huddle's own pattern check. That sandbox is reused, so a scan
   takes about 0.25 s.
+- **Huddle improving Huddle:** the operator room's changes to Huddle's own prompts are type-checked
+  in a Daytona sandbox before a pull request is opened. The sandbox clones the repo, swaps in the new
+  `prompts.ts`, and runs `deno check` with the same Deno version CI uses; it takes about 8 s.
 - **Disk limit:** at the account's 30 GiB cap, Huddle stops and **archives** its oldest prototype
   sandbox. It never deletes one, and never touches sandboxes Huddle didn't create.
 
@@ -134,6 +137,21 @@ A request like "build us a voice demo with ElevenLabs" now runs end to end:
 
 In **Full auto**, Huddle records its assumptions instead of asking. It still stops for keys and for
 the hourly job budget, which the room can approve or raise.
+
+## Huddle improving Huddle
+
+The private room `huddle-operator` belongs to the admin (`kishorebhatia`, set at first GitHub sign-in).
+Any request there, even just "improve from evals", runs `improve → review → pr`:
+
+1. **Evidence (Arize):** the last day's low eval scores with the judges' explanations, the lessons
+   Huddle learned, and failed pipelines.
+2. **Change:** the smallest edit to `prompts.ts` that addresses the most common failure (Claude
+   Sonnet).
+3. **Check (Daytona):** `deno check` over the whole repo, with one automatic fix if it fails.
+4. **Review:** a separate model reviews the change.
+5. **Pull request:** opened with the admin's GitHub token. The `evals` check runs the regression set
+   with the new prompt and logs it to Arize as an experiment.
+6. **Ship:** only a human merges, and merging deploys.
 
 ## Known gaps
 
