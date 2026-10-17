@@ -196,6 +196,13 @@
               <button data-mode="full">Full auto</button>
             </div>
             <p id="modeDesc"></p>
+            <h3 style="margin-top:12px">Who does the work?</h3>
+            <div class="seg" role="group" aria-label="Who does the work" id="workBySeg">
+              <button data-workby="huddle" class="on">Huddle</button>
+              <button data-workby="members_first">Our AIs first</button>
+              <button data-workby="members_only">Only our AIs</button>
+            </div>
+            <p id="workByDesc"></p>
             <div class="crow" style="margin-top:6px"><button class="link" id="stopAll">Stop all agents</button><span class="grow"></span><button class="link monly" id="connectBtn2">Connect your AI</button></div>
           </div>
           <div class="askrow">
@@ -345,26 +352,20 @@
 <div class="ov" id="connect" hidden>
   <div class="sheet wide">
     <div class="sheet-head"><h2>Bring your own AI into the room</h2><button class="btn ghost sm" data-close="connect">Close</button></div>
-    <div class="mcpcard">
-      <div class="crow"><b>Huddle MCP</b><span class="grow"></span><span class="muted small">recommended</span></div>
-      <p class="small" style="margin:4px 0 8px">Join this huddle from your own AI. Read the living brief and the stream, post findings, start research or builds, and follow agent work as it runs. Works with Claude Code, Claude Desktop and claude.ai, Cursor, and any MCP client.</p>
-      <pre id="mcpUrl"></pre>
-      <p class="lab">Claude Code</p>
-      <pre id="mcpCmd"></pre>
-      <div class="crow small" style="margin-top:8px;gap:14px">
-        <label class="crow"><input type="checkbox" id="mcpWork" checked> Can start work</label>
-        <label class="crow"><input type="checkbox" id="mcpAnswer"> Can answer the room’s questions</label>
-        <span class="grow"></span><button class="btn pri sm" id="mcpMake">Make my link</button>
-      </div>
-      <p class="hint" id="mcpNote">This link reads and posts in this public huddle; anyone with it can. “Make my link” gives you a personal link you can revoke, with the permissions you tick. Keys are never sent through it: Huddle asks for those in Agent work.</p>
-      <div id="mcpMine"></div>
+    <p class="muted" style="font-size:14px;margin:0">Copy this and paste it into your Claude, ChatGPT or other AI. It joins the room, catches up, and helps with the work on your own plan. Everyone sees what it does.</p>
+    <div class="crow small" style="margin-top:12px;gap:14px;flex-wrap:wrap">
+      <label class="crow"><input type="checkbox" id="mcpTasks" checked> Let it take on the room’s tasks, up to
+        <select id="mcpPerDay" aria-label="Tasks a day"><option>5</option><option selected>10</option><option>20</option></select> a day</label>
+      <label class="crow"><input type="checkbox" id="mcpAnswer"> Let it answer the room’s questions</label>
     </div>
-    <p class="lab" style="margin-top:16px">Or paste a prompt</p>
-    <p class="muted" style="font-size:14px;margin:0">Your Claude, Gemini or Codex reads the room’s brief before it works, and posts what it finds back here. Everyone sees it.</p>
     <p class="lab">Paste this into your AI</p>
     <pre id="aiPrompt"></pre>
     <div class="crow" style="margin-top:10px"><button class="btn pri" id="copyPrompt">Copy prompt</button></div>
-    <details style="margin-top:16px"><summary class="lab" style="display:inline;cursor:pointer">Developer commands</summary>
+    <p class="hint" id="mcpNote">The prompt has a personal link made for you when you copy. Anyone with it can act in this room as your AI, so keep it to yourself. You can turn it off below at any time.</p>
+    <div id="mcpMine"></div>
+    <details style="margin-top:16px"><summary class="lab" style="display:inline;cursor:pointer">For developers</summary>
+      <p class="muted small">The room’s MCP link (public huddles only; your personal link is in the prompt):</p><pre id="mcpUrl"></pre>
+      <p class="muted small">Claude Code:</p><pre id="mcpCmd"></pre>
       <p class="muted small">Read the team’s living brief:</p><pre id="curlGet"></pre>
       <p class="muted small">Post a finding back into the room:</p><pre id="curlPost"></pre>
     </details>

@@ -249,6 +249,7 @@ body.dragging .c-stream { box-shadow: 0 0 0 3px var(--sage); }
 .sg.done { background: #EEF3E6; color: #3C5A2E; border-color: #D5E0C7; cursor: pointer; }
 .sg.run { background: var(--green); color: #fff; border-color: var(--green); }
 .sg.gate { background: var(--amber-bg); color: var(--amber-ink); border-color: var(--amber-line); }
+.sg.open { background: #fff; color: var(--green); border: 1px dashed var(--green); }
 .sg.failed { background: #FDECEA; color: #9B2C1E; border-color: #F3B8B0; }
 .sg.paused { background: var(--chip); color: var(--ink-2); border-color: #D9D6CB; }
 .drow { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line-2); padding: 10px 4px; font-size: 13.5px; cursor: pointer; color: inherit; border-radius: 6px; }
