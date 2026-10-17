@@ -6,7 +6,7 @@
 // POST { room, action: "stop_all" | "resume" }      -> kill switch for a room
 // POST { sweep: true }                              -> unstick stalled pipelines and jobs
 import { cors, db, json } from "../_shared/util.ts";
-import { forMembers, getRoom, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
+import { forMembers, getRoom, handoffMinutes, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
 import { planGoal, type Plan } from "../_shared/plan.ts";
 import { secretNames, serverKeysMissing } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -48,7 +48,7 @@ async function overBudget(sb: SupabaseClient, p: any, s: number, room: Room) {
 
 async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opts: { parentId?: number; instructions?: string } = {}) {
   const stage = p.stages[s];
-  const members = forMembers(room, stage);
+  const members = await forMembers(sb, room, stage);
   if (!members && await overBudget(sb, p, s, room)) return;
   const answers = (p.meta?.answers ?? []).map((a: any) => `- Q: ${a.q}\n  A: ${a.a}`).join("\n");
   const STAGE_ONLY: Record<string, string> = {
@@ -69,9 +69,9 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
   const prompt = `STAGE ${s + 1} of ${p.stages.length} (${p.stages.join(" → ")}): ${stage.toUpperCase()}. ${STAGE_ONLY[stage] ?? ""}\n\n` +
     (opts.instructions ? `REVISE the previous version using this review:\n${opts.instructions}\n\n` : "") +
     `PIPELINE GOAL: ${p.goal}` + (answers ? `\n\nTEAM ANSWERS SO FAR:\n${answers}` : "");
-  // Members' AIs first: the stage waits as an open task; Huddle takes it after handoff_minutes
-  // (members_first), or never (members_only).
-  const handoff = room.work_by === "members_first" ? Math.max(1, room.handoff_minutes ?? 10) : 0;
+  // Members' AIs first: the stage waits as an open task; Huddle takes it after handoff_minutes,
+  // or never (members_only).
+  const handoff = handoffMinutes(room);
   const { data: job, error } = await sb.from("jobs").insert({
     room_id: p.room_id, pipeline_id: p.id, stage_index: s, kind: stage,
     title: `${p.title} · ${stage}${opts.instructions ? " (revision)" : ""}`,
@@ -181,7 +181,7 @@ async function step(sb: SupabaseClient, pid: number) {
   if (cur.status === "claimed") {
     if (cur.lease_until && Date.parse(cur.lease_until) > Date.now()) return { waiting: p.stages[s], worker: cur.worker };
     // The AI that claimed it went quiet: put it back for someone else (the handoff clock restarts).
-    const handoff = room.work_by === "members_first" ? Math.max(1, room.handoff_minutes ?? 10) : 0;
+    const handoff = handoffMinutes(room);
     const { data: back } = await sb.from("jobs").update({
       status: "open", worker: null, worker_id: null, claimed_at: null, lease_until: null, updated_at: new Date().toISOString(),
       open_until: handoff ? new Date(Date.now() + handoff * 60_000).toISOString() : null,

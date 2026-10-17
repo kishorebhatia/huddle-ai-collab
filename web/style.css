@@ -358,4 +358,9 @@ pre { background: var(--chip); border-radius: 10px; padding: 12px; font-family: 
 /* ---------- Huddle MCP ---------- */
 .mcpcard { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; background: #FAFAF6; }
 .mcpcard pre { margin: 4px 0; }
+.connect-go { gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.connect-go .btn { min-height: 44px; padding: 0 18px; font-size: 15px; }
+.connect-prompt { margin-top: 12px; }
+.connect-prompt summary { cursor: pointer; }
+.connect-prompt pre { max-height: 160px; overflow: auto; font-size: 11.5px; margin: 6px 0 0; }
 .pav.ai { font-size: 10px; letter-spacing: .02em; outline: 2px dashed rgba(255,255,255,.55); outline-offset: -3px; }

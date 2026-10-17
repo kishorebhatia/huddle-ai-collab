@@ -330,7 +330,7 @@ export function createMcp(opts: {
 
   async function release(room: string, who: Who, args: Any) {
     const [r] = await sql`select handoff_minutes, work_by from public.rooms where id = ${room}`;
-    const mins = r?.work_by === "members_first" ? Math.max(1, Number(r.handoff_minutes ?? 10)) : 0;
+    const mins = r?.work_by === "members_only" ? 0 : Math.max(1, Number(r?.handoff_minutes ?? 10));
     const [j] = await sql`update public.jobs set status = 'open', worker = null, worker_id = null, claimed_at = null, lease_until = null,
       open_until = ${mins ? sql`now() + ${`${mins} minutes`}::interval` : null}, updated_at = now()
       where id = ${Number(args.task_id)} and room_id = ${room} and status = 'claimed' and worker_id = ${who.id} returning title, pipeline_id`;
@@ -435,18 +435,18 @@ export function createMcp(opts: {
         if (who.link && next > Number(who.link.cursor_event_id ?? 0)) await sql`update public.mcp_links set cursor_event_id = ${next} where id = ${who.link.id}`;
         return data({
           goal: b?.state?.goal ?? null, new_items: items, waiting_on_the_room: waiting, open_tasks: tasks, next_since_id: next,
-          tip: tasks.length ? "Call claim_task to take one." : r?.work_by === "huddle" || !r?.work_by
-            ? "Huddle's own agents do this room's work. To have members' AIs take tasks, someone sets Work → Who does the work to “Our AIs first”."
-            : "No open tasks right now.",
+          tip: tasks.length ? "Call claim_task to take one." : r?.work_by === "huddle"
+            ? "Huddle's own agents do all of this room's work, so there are no tasks for you to take."
+            : "No open tasks right now. While you check in here, new research, build and review tasks wait for you first.",
         });
       }
       case "next_task": {
         const tasks = await openTasks(room, who);
         if (tasks.length) return data({ open_tasks: tasks, next: "Call claim_task with a task_id (or none for the first)." });
         const [r] = await sql`select work_by from public.rooms where id = ${room}`;
-        return text(r?.work_by === "huddle" || !r?.work_by
-          ? "No open tasks: Huddle's own agents do this room's work. Someone in the room can switch Work → Who does the work to “Our AIs first”."
-          : "No open tasks right now. Check back later with catch_up.");
+        return text(r?.work_by === "huddle"
+          ? "No open tasks: Huddle's own agents do all of this room's work."
+          : "No open tasks right now. While you check in here, new tasks wait for you first; check back later with catch_up.");
       }
       case "claim_task": return await claim(room, who, perms, args.task_id ? Number(args.task_id) : undefined);
       case "submit_work": return await submit(room, who, args);
