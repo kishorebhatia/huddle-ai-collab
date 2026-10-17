@@ -800,8 +800,12 @@ function stepText(p) {
   const cur = js.filter((j) => j.stage_index === at).pop();
   let who = "";
   if (cur?.status === "open") {
+    // Follow the room's current setting: the task's own fallback time no longer applies if it changed.
+    const workBy = state.room?.work_by || "huddle";
     const left = cur.open_until ? Math.max(0, Math.ceil((Date.parse(cur.open_until) - Date.now()) / 60_000)) : null;
-    who = left === null ? " · Waiting for a connected AI" : ` · Open for connected AIs, Huddle takes over in ${left} min`;
+    who = workBy === "huddle" ? " · Huddle is taking this over"
+      : workBy === "members_only" || left === null ? " · Waiting for a connected AI"
+      : ` · Open for connected AIs, Huddle takes over in ${left} min`;
   } else if (cur?.status === "claimed" && cur.worker) who = ` · ${cur.worker} is working on this`;
   return `${state.room?.paused ? "Paused · " : ""}Step ${at + 1} of ${p.stages.length} · ${p.stages[at]}${who}`;
 }
