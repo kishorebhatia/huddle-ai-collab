@@ -405,6 +405,10 @@ try {
 } catch (e) {
   console.warn("server keys not loaded", (e as Error).message);
 }
+// Jobs can't still be running in a server that just started (a deploy restarted it mid-job):
+// mark them failed now so the next sweep retries them within a minute, not after the stuck timeout.
+await sql`update public.jobs set status = 'failed', error = 'server restarted (deploy); retrying', updated_at = now() where status = 'running'`
+  .catch((e) => console.warn("orphaned jobs", e.message));
 await loadFunctions();
 await sql.listen("huddle_changes", (m) => onChange(m).catch((e) => console.error("change", e)));
 

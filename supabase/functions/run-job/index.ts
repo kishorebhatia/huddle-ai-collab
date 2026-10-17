@@ -5,7 +5,7 @@ import { invokeFn } from "../_shared/pipeline.ts";
 import { APP_SYSTEM, CHANGE_SYSTEM, IMPROVE_SYSTEM, LOCATE_SCHEMA, PROTOTYPE_SYSTEM, RESEARCH_SYSTEM, REVIEW_SCHEMA, REVIEW_SYSTEM, TRIAGE_SCHEMA, TRIAGE_SYSTEM } from "../_shared/prompts.ts";
 import {
   adminToken, applyChange, currentPrompts, evidence, mergePr, openPr, openPrFiles, PROMPTS_PATH, readFiles, repoTree, revertMerge,
-  sensitiveFiles, typeCheck, verifyChange, waitForChecks, waitForDeploy,
+  mergedSha, sensitiveFiles, typeCheck, verifyChange, waitForChecks, waitForDeploy,
 } from "../_shared/operator.ts";
 import { planGoal, planMarkdown, type Plan } from "../_shared/plan.ts";
 import { resolveSecrets } from "../_shared/vault.ts";
@@ -430,8 +430,10 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       const n = prJob?.meta?.pr_number;
       if (!n) throw new Error("no pull request to ship");
       const { token } = await adminToken(sb);
-      await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Waiting for CI's evals on PR #${n}…`, meta: { job_id: jobId } });
-      const c = await waitForChecks(token, n);
+      // Merging redeploys this very server, so a ship step can be cut off and retried: pick up where it was.
+      const already = await mergedSha(token, n);
+      if (!already) await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Waiting for CI's evals on PR #${n}…`, meta: { job_id: jobId } });
+      const c = already ? { conclusion: "success", url: "" } : await waitForChecks(token, n);
       const { data: roomRow } = await sb.from("rooms").select("mode").eq("id", job.room_id).maybeSingle();
       const { data: change } = await sb.from("jobs").select("meta").eq("pipeline_id", job.pipeline_id).in("kind", ["improve", "change"])
         .eq("status", "done").order("id", { ascending: false }).limit(1).maybeSingle();
@@ -453,11 +455,11 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       } else if (manual.length) {
         md = hand(`it needs manual steps first (${manual.join("; ").slice(0, 300)})`);
       } else {
-        const m = await mergePr(token, n, prJob.meta.pr_title ?? `Huddle change`);
+        const m = already ? { sha: already, merged: true } : await mergePr(token, n, prJob.meta.pr_title ?? `Huddle change`);
         if (!m.merged) {
           md = `CI passed but GitHub wouldn't merge PR #${n}; merge it yourself: ${prJob.meta.pr_url}`;
         } else {
-          await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Merged PR #${n} (review ${score}/10, CI passed). Waiting for the deploy…`, meta: { job_id: jobId } });
+          if (!already) await sb.from("events").insert({ room_id: job.room_id, author: "huddle", kind: "system", text: `Merged PR #${n} (review ${score}/10, CI passed). Waiting for the deploy…`, meta: { job_id: jobId } });
           const d = await waitForDeploy(token, m.sha);
           const live = await liveCheck();
           if (d.conclusion === "success" && live.ok) {

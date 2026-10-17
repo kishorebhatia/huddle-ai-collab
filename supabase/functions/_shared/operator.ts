@@ -100,6 +100,12 @@ export async function waitForChecks(token: string, prNumber: number, timeoutMs =
   return { conclusion: "timed_out", url: "", sha: "", mergeable: null };
 }
 
+/** Has this PR already been merged (e.g. by an earlier run of ship that a deploy restart cut short)? */
+export async function mergedSha(token: string, prNumber: number): Promise<string | null> {
+  const pr = await gh(token)(`/repos/${REPO}/pulls/${prNumber}`);
+  return pr.merged ? (pr.merge_commit_sha as string) : null;
+}
+
 /** Squash-merge a pull request (the push to the branch then runs CI again, which deploys). */
 export async function mergePr(token: string, prNumber: number, title: string) {
   const r = await gh(token)(`/repos/${REPO}/pulls/${prNumber}/merge`, {
