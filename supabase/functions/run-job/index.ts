@@ -283,7 +283,8 @@ async function hostAppOnDaytona(sb: SupabaseClient, job: any, proto: any, goal: 
 async function run(jobId: number) {
   const sb = db();
   const { data: job } = await sb.from("jobs").select("*").eq("id", jobId).single();
-  if (!job) return;
+  // Open and claimed jobs belong to members' AIs until the orchestrator hands them to Huddle.
+  if (!job || job.status === "open" || job.status === "claimed") return;
   return await span(`stage.${job.kind}`, "AGENT", { "input.value": `${job.title}\n${job.prompt}`, metadata: { job_id: jobId, kind: job.kind } },
     (s) => runJob(sb, job, s));
 }

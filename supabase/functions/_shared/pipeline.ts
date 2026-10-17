@@ -20,13 +20,41 @@ export function stagesFor(plan: { deliverable?: string; needs_research?: boolean
   return ["plan", ...research, ...(plan.deliverable === "app" ? ["prototype", "review", "host"] : [])];
 }
 
-export type Room = { id: string; mode: "suggest" | "auto" | "full"; paused: boolean; max_jobs_per_hour: number };
+export type Room = {
+  id: string; mode: "suggest" | "auto" | "full"; paused: boolean; max_jobs_per_hour: number;
+  work_by?: "auto" | "huddle" | "members_first" | "members_only"; handoff_minutes?: number;
+};
 
 export async function getRoom(sb: SupabaseClient, roomId: string): Promise<Room> {
   const { data } = await sb.from("rooms").select("*").eq("id", roomId).maybeSingle();
   if (data) return data as Room;
   const { data: created } = await sb.from("rooms").upsert({ id: roomId }).select().single();
-  return (created ?? { id: roomId, mode: "auto", paused: false, max_jobs_per_hour: 20 }) as Room;
+  return (created ?? { id: roomId, mode: "auto", paused: false, max_jobs_per_hour: 20, work_by: "auto" }) as Room;
+}
+
+// Stages a member's own AI can take (MCP claim_task / submit_work). Plan, publish, PR and ship stay
+// with Huddle: they're cheap, or need Huddle's sandboxes and tokens.
+export const MEMBER_STAGES = ["research", "prototype", "review"];
+
+// In auto mode, a member's AI counts as around if its link was used in the room this recently.
+const ACTIVE_MS = 60 * 60_000;
+
+/** Should this stage wait for a member's AI instead of running on Huddle's models? */
+export async function forMembers(sb: SupabaseClient, room: Room, stage: string) {
+  // The operator room changes Huddle itself; members' AIs contribute there with propose_change.
+  if (room.id === OPERATOR_ROOM || !MEMBER_STAGES.includes(stage)) return false;
+  const by = room.work_by ?? "auto";
+  if (by === "members_first" || by === "members_only") return true;
+  if (by !== "auto") return false;
+  // auto: only when someone's AI has been active here lately, so rooms without one never wait.
+  const { count } = await sb.from("mcp_links").select("id", { count: "exact", head: true })
+    .eq("room_id", room.id).is("revoked_at", null).gte("last_used_at", new Date(Date.now() - ACTIVE_MS).toISOString());
+  return (count ?? 0) > 0;
+}
+
+/** Minutes an open task waits for members' AIs before Huddle takes it; 0 = never (members_only). */
+export function handoffMinutes(room: Room) {
+  return room.work_by === "members_only" ? 0 : Math.max(1, room.handoff_minutes ?? 10);
 }
 
 /** Call another Edge Function in this project (fire-and-wait for the quick ack). */

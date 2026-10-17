@@ -6,7 +6,7 @@
 // POST { room, action: "stop_all" | "resume" }      -> kill switch for a room
 // POST { sweep: true }                              -> unstick stalled pipelines and jobs
 import { cors, db, json } from "../_shared/util.ts";
-import { getRoom, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
+import { forMembers, getRoom, handoffMinutes, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
 import { planGoal, type Plan } from "../_shared/plan.ts";
 import { secretNames, serverKeysMissing } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -14,6 +14,7 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 type Job = {
   id: number; stage_index: number; status: string; kind: string; review: any;
   output_md: string | null; error: string | null; updated_at: string;
+  open_until: string | null; lease_until: string | null; worker: string | null;
 };
 
 const MAX_REVISIONS = 1;   // per reviewed stage
@@ -30,21 +31,25 @@ async function save(sb: SupabaseClient, pid: number, patch: Record<string, unkno
   await sb.from("pipelines").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", pid);
 }
 
-async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opts: { parentId?: number; instructions?: string } = {}) {
-  // Budget check: too many jobs this hour → ask the room before spending more
+/** Budget check: too many jobs on Huddle's models this hour → ask the room before spending more. */
+async function overBudget(sb: SupabaseClient, p: any, s: number, room: Room) {
   const overrideUntil = p.meta?.budget_override_until ? Date.parse(p.meta.budget_override_until) : 0;
-  if (Date.now() > overrideUntil) {
-    const since = new Date(Date.now() - 3600_000).toISOString();
-    const { count } = await sb.from("jobs").select("id", { count: "exact", head: true })
-      .eq("room_id", p.room_id).gte("created_at", since);
-    if ((count ?? 0) >= room.max_jobs_per_hour) {
-      const question = `Budget: ${count} agent jobs ran in the last hour (limit ${room.max_jobs_per_hour}). Continue "${p.title}"?`;
-      await save(sb, p.id, { status: "waiting", gate: { kind: "budget", question, stage: s } });
-      await postEvent(sb, p.room_id, `Needs a decision — ${question}`, { pipeline_id: p.id });
-      return;
-    }
-  }
+  if (Date.now() <= overrideUntil) return false;
+  const since = new Date(Date.now() - 3600_000).toISOString();
+  // Work done by members' AIs (worker_id set) and tasks still waiting for one cost Huddle nothing.
+  const { count } = await sb.from("jobs").select("id", { count: "exact", head: true })
+    .eq("room_id", p.room_id).gte("created_at", since).is("worker_id", null).neq("status", "open");
+  if ((count ?? 0) < room.max_jobs_per_hour) return false;
+  const question = `Budget: ${count} agent jobs ran in the last hour (limit ${room.max_jobs_per_hour}). Continue "${p.title}"?`;
+  await save(sb, p.id, { status: "waiting", gate: { kind: "budget", question, stage: s } });
+  await postEvent(sb, p.room_id, `Needs a decision — ${question}`, { pipeline_id: p.id });
+  return true;
+}
+
+async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opts: { parentId?: number; instructions?: string } = {}) {
   const stage = p.stages[s];
+  const members = await forMembers(sb, room, stage);
+  if (!members && await overBudget(sb, p, s, room)) return;
   const answers = (p.meta?.answers ?? []).map((a: any) => `- Q: ${a.q}\n  A: ${a.a}`).join("\n");
   const STAGE_ONLY: Record<string, string> = {
     plan: "Plan how to deliver the goal end to end. Do not do the work yet.",
@@ -64,10 +69,14 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
   const prompt = `STAGE ${s + 1} of ${p.stages.length} (${p.stages.join(" → ")}): ${stage.toUpperCase()}. ${STAGE_ONLY[stage] ?? ""}\n\n` +
     (opts.instructions ? `REVISE the previous version using this review:\n${opts.instructions}\n\n` : "") +
     `PIPELINE GOAL: ${p.goal}` + (answers ? `\n\nTEAM ANSWERS SO FAR:\n${answers}` : "");
+  // Members' AIs first: the stage waits as an open task; Huddle takes it after handoff_minutes,
+  // or never (members_only).
+  const handoff = handoffMinutes(room);
   const { data: job, error } = await sb.from("jobs").insert({
     room_id: p.room_id, pipeline_id: p.id, stage_index: s, kind: stage,
     title: `${p.title} · ${stage}${opts.instructions ? " (revision)" : ""}`,
-    prompt, parent_id: opts.parentId ?? null, created_by: "huddle", status: "proposed",
+    prompt, parent_id: opts.parentId ?? null, created_by: "huddle", status: members ? "open" : "proposed",
+    open_until: members && handoff ? new Date(Date.now() + handoff * 60_000).toISOString() : null,
   }).select().single();
   if (error) {
     // unique index hit = another orchestrator call already started this stage
@@ -75,6 +84,27 @@ async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opt
     return;
   }
   await save(sb, p.id, { current: s });
+  if (members) {
+    await postEvent(sb, p.room_id,
+      `Open for the room's AIs: ${job.title}. ` +
+      (handoff ? `If nobody's AI takes it in ${handoff} min, Huddle will.` : "It waits until someone's AI takes it."),
+      { pipeline_id: p.id, job_id: job.id, open_task: true });
+    return;
+  }
+  await invokeFn("run-job", { job_id: job.id });
+}
+
+/** Huddle takes an open task nobody's AI claimed in time. */
+async function handOff(sb: SupabaseClient, p: any, job: Job & { title?: string }, room: Room) {
+  if (await overBudget(sb, p, job.stage_index, room)) {
+    // Waiting on the budget: drop the open task so the stage starts fresh once the room says yes.
+    await sb.from("jobs").update({ status: "dismissed" }).eq("id", job.id).eq("status", "open");
+    return;
+  }
+  const { data: taken } = await sb.from("jobs").update({ status: "proposed", open_until: null, updated_at: new Date().toISOString() })
+    .eq("id", job.id).eq("status", "open").select("id");
+  if (!taken?.length) return; // someone's AI claimed it a moment ago
+  await postEvent(sb, p.room_id, `Nobody's AI took "${p.title}" (${p.stages[job.stage_index]}), so Huddle is doing it.`, { pipeline_id: p.id, job_id: job.id });
   await invokeFn("run-job", { job_id: job.id });
 }
 
@@ -134,7 +164,7 @@ async function step(sb: SupabaseClient, pid: number) {
   if (room.paused) return { skipped: "paused" };
 
   const { data: jobs } = await sb.from("jobs")
-    .select("id, stage_index, status, kind, review, output_md, error, updated_at")
+    .select("id, stage_index, status, kind, review, output_md, error, updated_at, open_until, lease_until, worker")
     .eq("pipeline_id", pid).order("id");
   const all = (jobs ?? []) as Job[];
   const latest = (i: number) => [...all].reverse().find((j) => j.stage_index === i);
@@ -143,10 +173,30 @@ async function step(sb: SupabaseClient, pid: number) {
   const s = p.current as number;
   const cur = latest(s);
   const prev = s > 0 ? latestDone(s - 1) : undefined;
-  const fresh = cur && (!prev || cur.id > prev.id); // a stage result is only valid if newer than its input
+  // A stage result is only valid if newer than its input (and a dismissed job is no result at all).
+  const fresh = cur && cur.status !== "dismissed" && (!prev || cur.id > prev.id);
 
   if (!fresh) { await startStage(sb, p, s, room); return { started: p.stages[s] }; }
   if (cur.status === "proposed" || cur.status === "running") return { waiting: p.stages[s] };
+  if (cur.status === "claimed") {
+    if (cur.lease_until && Date.parse(cur.lease_until) > Date.now()) return { waiting: p.stages[s], worker: cur.worker };
+    // The AI that claimed it went quiet: put it back for someone else (the handoff clock restarts).
+    const handoff = handoffMinutes(room);
+    const { data: back } = await sb.from("jobs").update({
+      status: "open", worker: null, worker_id: null, claimed_at: null, lease_until: null, updated_at: new Date().toISOString(),
+      open_until: handoff ? new Date(Date.now() + handoff * 60_000).toISOString() : null,
+    }).eq("id", cur.id).eq("status", "claimed").lt("lease_until", new Date().toISOString()).select("id");
+    if (back?.length) await postEvent(sb, p.room_id, `${cur.worker ?? "An AI"} didn't finish "${p.title}" (${p.stages[s]}) in time, so it's open again.`, { pipeline_id: p.id, job_id: cur.id, open_task: true });
+    return { reopened: p.stages[s] };
+  }
+  if (cur.status === "open") {
+    // members_only never falls back; members_first hands it to Huddle when the clock runs out.
+    if (room.work_by !== "members_only" && (!cur.open_until || Date.parse(cur.open_until) <= Date.now())) {
+      await handOff(sb, p, cur, room);
+      return { handed_off: p.stages[s] };
+    }
+    return { open: p.stages[s] };
+  }
 
   if (cur.status === "failed") {
     const fails = p.meta?.failures?.[s] ?? 0;
@@ -228,7 +278,7 @@ async function act(sb: SupabaseClient, pid: number, action: string, answer?: str
   const meta = { ...(p.meta ?? {}) };
   if (action === "stop") {
     await save(sb, pid, { status: "stopped", gate: null });
-    await sb.from("jobs").update({ status: "dismissed" }).eq("pipeline_id", pid).eq("status", "proposed");
+    await sb.from("jobs").update({ status: "dismissed" }).eq("pipeline_id", pid).in("status", ["proposed", "open", "claimed"]);
     await postEvent(sb, p.room_id, `Stopped: ${p.title}`, { pipeline_id: pid });
     return { stopped: pid };
   }
@@ -310,7 +360,7 @@ Deno.serve(async (req) => {
       await sb.from("rooms").update({ paused }).eq("id", body.room);
       if (paused) {
         await sb.from("pipelines").update({ status: "stopped", gate: null }).eq("room_id", body.room).in("status", ["running", "waiting"]);
-        await sb.from("jobs").update({ status: "dismissed" }).eq("room_id", body.room).eq("status", "proposed");
+        await sb.from("jobs").update({ status: "dismissed" }).eq("room_id", body.room).in("status", ["proposed", "open", "claimed"]);
         await postEvent(sb, body.room, "Stop all: agent work paused for this room.");
       } else {
         await postEvent(sb, body.room, "Agent work resumed.");
