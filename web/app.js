@@ -3,6 +3,7 @@ import { marked } from "https://esm.sh/marked@12.0.2";
 import DOMPurify from "https://esm.sh/dompurify@3.1.6";
 import * as config from "./config.js";
 const { SUPABASE_URL, SUPABASE_KEY } = config;
+const APP_BASE_PATH = config.APP_BASE_PATH ?? "";
 
 // Signed in with GitHub? The sign-in callback hands back a Huddle token in the URL fragment.
 function readAuth() {
@@ -25,7 +26,8 @@ const auth = readAuth();
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, auth.token ? { global: { headers: { Authorization: `Bearer ${auth.token}` } } } : {});
 if (auth.token) sb.realtime.setAuth(auth.token);
 const signIn = (scope = "") => {
-  location.href = `/auth/github/login?return=${encodeURIComponent(location.pathname + location.search)}${scope ? `&scope=${scope}` : ""}`;
+  const returnPath = (location.pathname.slice(APP_BASE_PATH.length) || "/") + location.search;
+  location.href = `${SUPABASE_URL}/auth/github/login?return=${encodeURIComponent(returnPath)}${scope ? `&scope=${scope}` : ""}`;
 };
 const $ = (id) => document.getElementById(id);
 const FN_BASE = `${SUPABASE_URL}/functions/v1`;
@@ -1559,12 +1561,12 @@ async function openConnect() {
   $("curlPost").textContent = post;
   connectText = "";
   $("aiPrompt").textContent = "Making your personal link…";
-  renderMcp(`${location.origin}/mcp?room=${encodeURIComponent(room)}`);
+  renderMcp(`${SUPABASE_URL}/mcp?room=${encodeURIComponent(room)}`);
   $("connect").hidden = false;
   try {
     connectText = connectPrompt(await personalLink());
     $("aiPrompt").textContent = connectText;
-    renderMcp(`${location.origin}/mcp?room=${encodeURIComponent(room)}`);
+    renderMcp(`${SUPABASE_URL}/mcp?room=${encodeURIComponent(room)}`);
   } catch (e) {
     $("aiPrompt").textContent = `Couldn't make your link: ${e.message}`;
   }
@@ -1580,7 +1582,7 @@ function renderMcp(url) {
     list.append(h("div", { class: "crow small muted", style: "margin-top:8px" },
       h("span", { class: "grow" }, `Your link${l.at ? `, made ${new Date(l.at).toLocaleDateString()}` : ""}`),
       h("button", { class: "link", onclick: async () => {
-        await fetch(`/mcp/links?key=${encodeURIComponent(l.key)}`, { method: "DELETE" });
+        await fetch(`${SUPABASE_URL}/mcp/links?key=${encodeURIComponent(l.key)}`, { method: "DELETE" });
         store.set(`huddle:mcp:${room}`, JSON.stringify(mine.filter((x) => x.key !== l.key)));
         toast("Link turned off. Any AI using it is disconnected.");
         $("connect").hidden = true;
@@ -1591,7 +1593,7 @@ function renderMcp(url) {
 async function personalLink() {
   const mine = store.json(`huddle:mcp:${room}`, []);
   if (mine[0]?.url) return mine[0].url;
-  const r = await (await fetch("/mcp/links", {
+  const r = await (await fetch(`${SUPABASE_URL}/mcp/links`, {
     method: "POST", headers: { "content-type": "application/json", ...(auth.token ? { authorization: `Bearer ${auth.token}` } : {}) },
     body: JSON.stringify({ room, label: me || null, perms: LINK_PERMS }),
   })).json();

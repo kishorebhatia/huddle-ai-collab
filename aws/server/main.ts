@@ -379,7 +379,8 @@ async function handle(req: Request): Promise<Response> {
   }
   if (p === "/config.js") {
     return new Response(
-      `export const SUPABASE_URL = location.origin;\nexport const SUPABASE_KEY = ${JSON.stringify(ANON_KEY)};\n` +
+      `export const APP_BASE_PATH = new URL(".", import.meta.url).pathname.slice(0, -1);\n` +
+        `export const SUPABASE_URL = location.origin + APP_BASE_PATH;\nexport const SUPABASE_KEY = ${JSON.stringify(ANON_KEY)};\n` +
         // No Gemini key → no server speech model; browsers transcribe with their own speech recognition.
         `export const SPEECH = ${JSON.stringify(env("GEMINI_API_KEY") ? "server" : "browser")};\n` +
         `export const ARIZE_PROJECT_URL = ${JSON.stringify(env("ARIZE_PROJECT_URL"))};\n` +
