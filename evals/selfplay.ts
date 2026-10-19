@@ -8,7 +8,8 @@ const SITE = (Deno.env.get("HUDDLE_URL") ?? "https://d2k5rbdeilbp1b.cloudfront.n
 const ANON = Deno.env.get("ANON_KEY")!;
 const DAYTONA = Deno.env.get("DAYTONA_API_KEY")!;
 const EL_KEY = Deno.env.get("ELEVENLABS_API_KEY") ?? "";
-const RUN = `sp${Date.now().toString(36).slice(-5)}`;
+// "test-" rooms are never auto-published to GitHub (see the github function).
+const RUN = `test-sp${Date.now().toString(36).slice(-5)}`;
 const CONCURRENCY = 3; // at most 3 builds (and sandboxes) at once
 const TIMEOUT_MS = 14 * 60_000;
 
@@ -45,8 +46,10 @@ const mcp = async (room: string, name: string, args: Any, persona: string) => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function stopSandboxes(room: string) {
-  const list = await (await fetch("https://app.daytona.io/api/sandbox", { headers: { authorization: `Bearer ${DAYTONA}` } })).json();
-  const ours = (list.items ?? list).filter((x: Any) => x.labels?.room === room && x.state === "started");
+  const r = await fetch("https://app.daytona.io/api/sandbox", { headers: { authorization: `Bearer ${DAYTONA}` } }).catch(() => null);
+  const list = r?.ok ? await r.json() : null;
+  if (!list) { console.warn(`could not list Daytona sandboxes (${r?.status ?? "network"}); stop ${room}'s sandbox by hand`); return 0; }
+  const ours = (Array.isArray(list) ? list : list.items ?? []).filter((x: Any) => x.labels?.room === room && x.state === "started");
   for (const sb of ours) await fetch(`https://app.daytona.io/api/sandbox/${sb.id}/stop`, { method: "POST", headers: { authorization: `Bearer ${DAYTONA}` } });
   return ours.length;
 }

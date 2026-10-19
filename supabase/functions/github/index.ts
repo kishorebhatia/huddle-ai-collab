@@ -234,7 +234,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === "preview" || action === "publish") {
-      // Automatic saves wait until the room has made something worth a repository.
+      // Automatic saves wait until the room has made something worth a repository; test rooms never auto-publish.
+      if (body.auto && roomId.startsWith("test-")) return json({ skipped: "test room" });
       if (body.auto) {
         const { count } = await sb.from("jobs").select("id", { count: "exact", head: true }).eq("room_id", roomId)
           .eq("status", "done").in("kind", ["research", "prototype"]);
@@ -323,7 +324,8 @@ Deno.serve(async (req) => {
       await sb.from("rooms").update({ repo }).eq("id", roomId);
       await sb.from("repo_files").upsert(changed.map((path) => ({ room_id: roomId, path, sha256: hashes[path], commit_sha: commit.sha, updated_at: new Date().toISOString() })));
       await recordEval({
-        name: "secret_free", score: scanned.findings.length ? 0 : 1, room: roomId,
+        // A scan that couldn't run isn't a pass: score what the pattern check alone could vouch for.
+        name: "secret_free", score: scanned.findings.length ? 0 : scanned.gitleaksRan ? 1 : 0.5, room: roomId,
         explanation: scanned.findings.length
           ? `Redacted ${scanned.findings.length} secret(s) before publishing: ${[...new Set(scanned.findings.map((f) => `${f.rule} in ${f.file}`))].join(", ").slice(0, 600)}`
           : `No secrets found (${scanned.note}).`,
