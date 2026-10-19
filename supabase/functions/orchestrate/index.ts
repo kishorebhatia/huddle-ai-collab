@@ -251,7 +251,18 @@ async function step(sb: SupabaseClient, pid: number) {
       return { gated: "question" };
     }
     const revs = p.meta?.revisions?.[s - 1] ?? 0;
-    if (r.verdict === "revise" && revs < MAX_REVISIONS) {
+    // After a revision, keep whichever version reviewed better: revisions often come back worse
+    // (in simulated runs, research groundedness fell 0.60 → 0.40 and 0.92 → 0.75 after one).
+    const earlier = [...all].reverse().find((j) => j.stage_index === s && j.status === "done" && j.id < cur.id && j.review);
+    if (revs > 0 && earlier && Number(r.score ?? 0) < Number(earlier.review?.score ?? 0)) {
+      const revised = latestDone(s - 1);
+      if (revised) {
+        await sb.from("jobs").update({ status: "dismissed", updated_at: new Date().toISOString() }).eq("id", revised.id);
+        await postEvent(sb, p.room_id,
+          `Kept the earlier version of "${p.title}" (${p.stages[s - 1]}): it reviewed ${earlier.review.score}/10 and the revision ${r.score ?? "?"}/10.`,
+          { pipeline_id: p.id, job_id: revised.id });
+      }
+    } else if (r.verdict === "revise" && revs < MAX_REVISIONS) {
       const target = latestDone(s - 1);
       await save(sb, p.id, {
         current: s - 1,

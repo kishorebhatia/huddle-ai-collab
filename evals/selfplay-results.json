@@ -1,0 +1,202 @@
+{
+ "run": "test-sps4k88",
+ "at": "2026-10-19T05:00:09.364Z",
+ "results": [
+  {
+   "id": "judging",
+   "kind": "research",
+   "room": "test-sps4k88-judging",
+   "pipeline_id": 20,
+   "status": "done",
+   "stages": [
+    "plan",
+    "research",
+    "review"
+   ],
+   "host_url": null,
+   "minutes": 0.6,
+   "evals": {
+    "groundedness": 0.92,
+    "review_score": 0.9
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 0
+  },
+  {
+   "id": "tip-split",
+   "kind": "static",
+   "room": "test-sps4k88-tip-split",
+   "pipeline_id": 19,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-ae5dd93f-1dd3-4e82-8ae2-2ced053955fa.daytonaproxy01.net",
+   "minutes": 1.4,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "retro",
+   "kind": "static",
+   "room": "test-sps4k88-retro",
+   "pipeline_id": 18,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-28d1b094-9af8-4756-9a0d-3668bac76418.daytonaproxy01.net",
+   "minutes": 3.1,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "lunch-wheel",
+   "kind": "static",
+   "room": "test-sps4k88-lunch-wheel",
+   "pipeline_id": 22,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-2e4df0f1-5cda-434a-9a9d-389dd3901af2.daytonaproxy01.net",
+   "minutes": 1.7,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "standup-timer",
+   "kind": "static",
+   "room": "test-sps4k88-standup-timer",
+   "pipeline_id": 21,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-6c142055-7e41-409d-8178-6a496ec6e451.daytonaproxy01.net",
+   "minutes": 3.8,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "mini-kanban",
+   "kind": "static",
+   "room": "test-sps4k88-mini-kanban",
+   "pipeline_id": 24,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-22c4d0c6-7c1f-4362-b97a-24ea9598f7fd.daytonaproxy01.net",
+   "minutes": 1.4,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "voice-greeter",
+   "kind": "voice",
+   "room": "test-sps4k88-voice-greeter",
+   "pipeline_id": 25,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-85759196-45dc-43c6-a89e-1a9fe96fa870.daytonaproxy01.net",
+   "minutes": 1.6,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "meeting-cost",
+   "kind": "static",
+   "room": "test-sps4k88-meeting-cost",
+   "pipeline_id": 23,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-dfb65d2a-00c7-4b6b-9afd-5d94885341f2.daytonaproxy01.net",
+   "minutes": 3.1,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  },
+  {
+   "id": "pronounce",
+   "kind": "voice",
+   "room": "test-sps4k88-pronounce",
+   "pipeline_id": 26,
+   "status": "done",
+   "stages": [
+    "plan",
+    "prototype",
+    "review",
+    "host"
+   ],
+   "host_url": "https://3000-7cc38406-dc2b-4797-b491-78bb3cfa1e3f.daytonaproxy01.net",
+   "minutes": 1.7,
+   "evals": {
+    "review_score": 0.9,
+    "smoke_test": 1,
+    "build_success": 1
+   },
+   "failed_jobs": [],
+   "sandboxes_stopped": 1
+  }
+ ]
+}

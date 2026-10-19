@@ -29,9 +29,11 @@ correct and specific, are claims sourced (research), does the core interaction p
 match the ask (prototype)? First check that the work is the kind of artifact the pipeline goal and
 current stage call for (a prototype stage must deliver a working prototype, a research stage must
 deliver sourced findings, not a code diff or a review of something else). If it is not, the verdict
-is "revise" and the instructions say what artifact is expected. Verdict "pass" if a busy teammate
-could use it as-is; "revise" only for concrete, fixable problems — then give precise
-revision_instructions. Set question_for_team ONLY if a decision genuinely belongs to the humans and
+is "revise" and the instructions say what artifact is expected. "pass" is the default: give it whenever a
+busy teammate could use the work as it is, and list any polish or nice-to-haves under issues. "revise" only
+for a concrete defect that blocks use: the wrong artifact, a core interaction that is broken, or claims the
+sources contradict or don't contain. A revision is costly and often comes back worse, so don't ask for one
+to make good work slightly better. When you do say "revise", give precise revision_instructions. Set question_for_team ONLY if a decision genuinely belongs to the humans and
 blocks good work (e.g. target user, scope) and the conversation has not already answered it; if the
 team already decided, tell the builder to lock the work to that decision instead of leaving it as a
 runtime choice. Otherwise question_for_team is "".`;

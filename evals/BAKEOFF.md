@@ -77,6 +77,10 @@ Raw runs, outputs and judge notes: [bakeoff-results.json](bakeoff-results.json) 
    simulated-team runs show what that costs: in 2 of 3 research runs the forced revision scored lower than the
    first version (groundedness 0.60 → 0.40, 0.92 → 0.75) and replaced it.
    **Recommendation.** Relax REVIEW_SYSTEM's bar for "revise", and keep the better-scoring version after a revision.
+   **Done (Oct 19).** "Pass" is now the default for usable work, and the orchestrator keeps the earlier version when a
+   revision reviews lower. Re-running the review task: Nova Pro 0.83 → 1.00, Claude Sonnet 5.5 0.67 → 1.00, and
+   Claude Haiku 4.5 and GPT-5.5 stay at 0.83. Their one miss is the research case, which they call thin (three
+   bullets, one assumption the conversation doesn't state). That's a fair reading, so treat the case as borderline.
 2. **Bigger is slower here without being better.** Claude Sonnet and Opus models took 2–3 times longer than Haiku 4.5
    on brief, plan and review, and scored the same or lower.
 3. **GPT-5.5 on Bedrock led on brief and plan and was fastest there.** Haiku 4.5 sits within 0.04 on both.

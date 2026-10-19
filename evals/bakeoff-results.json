@@ -1,5 +1,5 @@
 {
- "at": "2026-10-19T04:42:18.948Z",
+ "at": "2026-10-19T05:09:34.541Z",
  "judge": "us.anthropic.claude-sonnet-4-6",
  "rows": [
   {
@@ -883,72 +883,6 @@
    "output": "{\"goal\":\"Build and launch a product with an upload API and landing page by Sunday noon.\",\"summary\":\"The team is organizing work to ship by Sunday noon. Maya is writing the upload API, Leo is building the landing page, and Sam is recording a 2-minute demo video. These are the immediate next steps.\",\"changed\":[\"Goal and deadline set: Sunday noon\",\"Initial task assignments: Maya (API), Leo (landing page), Sam (demo video)\"],\"decisions\":[{\"text\":\"Deadline is Sunday noon\",\"refs\":[4],\"by\":\"Maya\"}],\"questions\":[],\"ideas\":[],\"next_steps\":[{\"text\":\"Write API for uploads\",\"type\":\"build\",\"owner\":\"Maya\",\"refs\":[1]},{\"text\":\"Build landing page\",\"type\":\"build\",\"owner\":\"Leo\",\"refs\":[2]},{\"text\":\"Record 2 minute demo video\",\"type\":\"prototype\",\"owner\":\"Sam\",\"refs\":[3]}]}"
   },
   {
-   "task": "review",
-   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-   "case": "research-offtopic",
-   "score": 1,
-   "ms": 3700,
-   "inTok": 1120,
-   "outTok": 313,
-   "note": "revise 2/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":[\"Correctly identified the companies in scope (Linear, Jira, Asana)\"],\"issues\":[\"Does not answer the core question: no pricing information provided\",\"Provides background facts (founding year, founder, company origin) instead of pricing research\",\"Claims 3 sources but provides no citations or links\",\"Missing the key data needed: costs for a 10-person team for each product\",\"Does not address different pricing tiers or plan options that would affect team pricing\"],\"revision_instructions\":\"Deliver actual pricing research for each tool. For each of Linear, Jira, and Asana: (1) find the current cost per user or team plan options, (2) calculate or state the total cost for a 10-person team, (3) note any free tier limits, (4) cite sources with URLs. Format as a simple table or breakdown with pricing as the primary output, not company history.\\\"\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-   "case": "proto-wrong-thing",
-   "score": 1,
-   "ms": 3629,
-   "inTok": 1137,
-   "outTok": 350,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"The code is syntactically valid HTML with working JavaScript\",\"The oninput event binding pattern is functional\"],\"issues\":[\"Completely wrong artifact: this is a unit converter (meters to feet), not a tip calculator\",\"Does not implement any of the three required features: bill amount input, tip % input, or split calculation\",\"No UI elements for tip percentage, number of people, or per-person calculations\",\"The entire scope of the pipeline goal is absent\"],\"revision_instructions\":\"Build a tip calculator HTML prototype with the following functional elements: (1) Input field for bill amount, (2) Input field for tip percentage (or buttons for preset values like 15%, 18%, 20%), (3) Input field for number of people to split between, (4) Display areas showing: total tip amount, total bill with tip, and per-person cost. Example calculation: $100 bill × 20% tip = $20 tip → $120 total ÷ 4 people = $30/person. The oninput/onclick handlers should update all displays in real time.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-   "case": "proto-good",
-   "score": 1,
-   "ms": 4447,
-   "inTok": 1236,
-   "outTok": 391,
-   "note": "pass 8/10 (expected pass)",
-   "output": "{\"verdict\":\"pass\",\"score\":8,\"strengths\":[\"Working prototype: calculates total per person correctly (bill × (1 + tip%) / split)\",\"All three required inputs present and functional: bill amount, tip %, number of people\",\"Real-time calculation: updates on any input change\",\"Sensible defaults: 18% tip, 2 people split\",\"Clean output format with currency display to 2 decimals\",\"Minimal but functional HTML/JS—no unnecessary bloat\"],\"issues\":[\"Placeholder text for bill amount ('Bill') is unclear—should prompt user for action\",\"No visual separation or labels for inputs—UX could be clearer (which field is what?)\",\"Output label is implicit ('Each pays $X')—assumes user understands the context\",\"No validation feedback: entering 0 people defaults to 1 silently (safe but not obvious)\",\"Missing focus state or tab order hints\"],\"revision_instructions\":\"Add explicit labels above each input ('Bill Amount', 'Tip %', 'Number of People') and wrap inputs in a simple form structure for readability. Add a data attribute or aria-label for clarity. Optionally: add a small note next to the output explaining 'Each person pays' or similar. These are polish-only; the core calculation logic is solid and working.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-   "case": "research-vague",
-   "score": 1,
-   "ms": 4983,
-   "inTok": 1110,
-   "outTok": 470,
-   "note": "revise 2/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":\"\\n  - Correctly identifies that Postgres is relational and DynamoDB is NoSQL\\n  - Acknowledges that choice depends on requirements\\n\",\"issues\":\"\\n  - Zero sources cited; research is entirely unsourced opinion\\n  - No specific technical comparison (e.g., query capabilities, consistency models, pricing)\\n  - No multi-tenant SaaS considerations despite pipeline goal mentioning this context\\n  - Claims are generic platitudes (\\\"has pros and cons,\\\" \\\"consider your requirements\\\")\\n  - Fails to provide actionable insights that would inform a real decision\\n  - Does not address common SaaS concerns: tenant isolation, scaling patterns, data residency, operational overhead\\n\",\"revision_instructions\":\"Conduct and cite real research. Compare Postgres and DynamoDB with specific technical dimensions relevant to multi-tenant SaaS: (1) data consistency & ACID guarantees, (2) query flexibility & schema evolution, (3) multi-tenancy patterns (row-level security, logical/physical isolation), (4) pricing at scale, (5) operational complexity. For each dimension, cite at least one authoritative source (AWS docs, Postgres docs, peer-reviewed articles, industry benchmarks). Highlight 2–3 decision factors that most impact SaaS viability (e.g., \\\"Postgres ACID + role-based row security makes multi-tenant isolation simpler to audit; DynamoDB requires application-layer tenant filtering\\\").\",\"question_for_team\":\"What is your SaaS' primary workload pattern: OLTP with complex joins & tenant-specific queries, or simple key-value lookups? And do you anticipate needing geographic distribution from day one?\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-   "case": "research-good",
-   "score": 0,
-   "ms": 7486,
-   "inTok": 1206,
-   "outTok": 633,
-   "note": "revise 4/10 (expected pass)",
-   "output": "{\"verdict\":\"revise\",\"score\":4,\"strengths\":[\"Clear recommendation with a stated rationale\",\"Identifies a real tradeoff (RLS vs. partition-key design)\",\"Cites PostgreSQL documentation and AWS pricing page\",\"Acknowledges DynamoDB's strength (single-digit ms reads)\"],\"issues\":[\"Conclusion is stated without evidence of comparative cost or performance analysis specific to the team's workload\",\"No data on the team's actual query patterns, scale, or tenant count—claims like 'joins-heavy reporting is cheap' are generic\",\"DynamoDB findings do not compare directly to the Postgres claim; the export-to-Athena statement lacks sourcing or cost estimation\",\"Six sources cited but only three visible and partial; no evidence of how sources support the recommendation\",\"Does not address operational burden (monitoring, scaling, schema migration, backup strategy) for either system\",\"Missing critical factors for SaaS: warm-up costs, concurrent user scale, cost predictability under growth\"],\"revision_instructions\":\"1. Define the team's workload explicitly: estimate write/read ratio, typical query complexity (number and type of joins), ad-hoc vs. scheduled reporting volume, concurrent users, and tenant scale. 2. Build a cost model for both systems under realistic load (e.g., 1000 tenants, 100 RPS, 2x daily reporting spike). Show monthly cost at 10x scale. 3. Expand the DynamoDB section: detail the access-pattern design required, cite a source on GSI costs and query complexity, and estimate Athena costs for reporting exports. 4. Test the RLS claim with a sourced example or caveat about performance at high concurrency; cite PostgreSQL monitoring overhead if relevant. 5. Add a 2–3 row risk table: schema flexibility, query optimization difficulty, and team ops skill gaps for each. 6. List all six sources in a References section with URLs and the specific finding each supports. 7. Include a recommendation scope: state the decision criteria (e.g., 'if your reporting is <1% of traffic, Postgres wins; if ad-hoc queries dominate, reconsider').\\\"\",\"question_for_team\":\"What is your expected read/write ratio, and what fraction of your workload is ad-hoc reporting vs. transactional queries? This determines whether DynamoDB's lack of query flexibility is a dealbreaker or a non-issue.\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-   "case": "proto-broken",
-   "score": 1,
-   "ms": 5460,
-   "inTok": 1130,
-   "outTok": 665,
-   "note": "revise 2/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":\"\\n  <parameter name=\\\"strength_1\\\">Correct prototype format (HTML) for the pipeline stage\",\"strength_2\":\"Basic structure in place with input, button, and output display\",\"issues\":\"\\n  <parameter name=\\\"issue_1\\\">JavaScript syntax error: function calc( is missing closing parenthesis—should be calc()\",\"issue_2\":\"Missing closing script tag\",\"issue_3\":\"Hardcoded 1.18 multiplier (18% tip only) does not support variable tip % input as specified in pipeline goal\",\"issue_4\":\"No input field for tip percentage—user cannot adjust the tip rate\",\"issue_5\":\"No input field for number of people to split between—split feature completely missing\",\"issue_6\":\"Only takes bill amount; full calculator requires three inputs: bill, tip %, and split count\",\"issue_7\":\"Output is ambiguous—does not label whether it shows total bill, tip amount, or per-person share\",\"revision_instructions\":\"Fix syntax errors and add full calculator functionality:\\n1. Correct the function syntax: change `function calc( {` to `function calc() {` and close the script tag.\\n2. Add input fields: one for bill amount (id=b), one for tip percentage (id=t), one for number of people (id=p).\\n3. Update calc() to read all three inputs: `const bill = parseFloat(document.getElementById('b').value); const tipPct = parseFloat(document.getElementById('t').value); const people = parseInt(document.getElementById('p').value);`\\n4. Implement the full calculation: `const tipAmount = bill * (tipPct / 100); const total = bill + tipAmount; const perPerson = total / people;`\\n5. Update output to show all three values clearly labeled: \\\"Tip: $X.XX | Total: $X.XX | Per Person: $X.XX\\\" (or similar)\\n6. Add basic input validation (non-empty, positive numbers).\",\"question_for_team\":\"\"}"
-  },
-  {
    "task": "brief",
    "model": "us.anthropic.claude-sonnet-4-6",
    "case": "decision-and-question",
@@ -1345,72 +1279,6 @@
    "output": "{\"goal\":\"Decide which target customer to pursue: hackathon teams or agencies.\",\"summary\":\"Maya favors targeting hackathon teams, while Sam argues agencies will actually pay. Leo suggests asking a few people at the event to settle it, and Maya noted a need for 5 quick interviews. No target segment has been decided.\",\"changed\":[\"Brief started: open disagreement on target segment (hackathon teams vs agencies)\",\"Plan to run 5 quick interviews at the event\"],\"decisions\":[],\"questions\":[{\"text\":\"Which target segment should we pursue: hackathon teams or agencies?\",\"refs\":[1,2,3]}],\"ideas\":[{\"text\":\"Target hackathon teams\",\"by\":\"Maya\",\"refs\":[1]},{\"text\":\"Target agencies, because they will actually pay\",\"by\":\"Sam\",\"refs\":[2]}],\"next_steps\":[{\"text\":\"Do 5 quick interviews with people at the event to compare hackathon teams vs agencies\",\"by\":\"Maya\",\"owner\":\"Maya\",\"type\":\"ask\",\"refs\":[3,4]}]}"
   },
   {
-   "task": "review",
-   "model": "us.anthropic.claude-sonnet-5-5",
-   "case": "research-offtopic",
-   "score": 1,
-   "ms": 5597,
-   "inTok": 1023,
-   "outTok": 719,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Facts stated about company background are broadly accurate (Linear founded 2019, Jira by Atlassian, Asana co-founded by Dustin Moskovitz).\"],\"issues\":[\"Does not answer the question: no pricing for Linear, Jira, or Asana is given.\",\"No 10-person team cost calculation (per-seat price × 10, monthly vs annual billing).\",\"No plan tiers named (e.g., Free/Standard/Premium for Jira; Free/Basic/Business for Linear; Personal/Starter/Advanced for Asana).\",\"Claims are unsourced: 'SOURCES: 3' is only a count, with no URLs, titles, or retrieval dates, so nothing can be verified.\",\"Content is generic company trivia that is irrelevant to the goal; 'popular with startups' is vague and unsupported.\",\"No notes on pricing caveats such as minimum seats, user caps on free tiers, or add-ons that affect a 10-person team.\"],\"revision_instructions\":\"Redo the research to deliver sourced pricing findings. For each of Linear, Jira (Atlassian Cloud), and Asana: (1) list the current plans relevant to a 10-person team, with per-user/month prices for both monthly and annual billing; (2) compute the total monthly and annual cost for exactly 10 users on each plan; (3) note free-tier limits (e.g., Jira Free is up to 10 users), minimum seats, and features gated by tier that matter for a small team; (4) cite each figure with a specific URL (the official pricing pages) and the date accessed. Present a compact comparison table with a one-line takeaway. Drop the company background trivia. Flag any figures that could not be verified or that depend on region or currency.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-sonnet-5-5",
-   "case": "research-vague",
-   "score": 1,
-   "ms": 8485,
-   "inTok": 1029,
-   "outTok": 995,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Factually correct at the most generic level: Postgres is relational and DynamoDB is NoSQL.\"],\"issues\":[\"Does not compare anything for a multi-tenant SaaS. It is generic filler with no tenancy-specific analysis.\",\"Zero sources. A research stage must deliver sourced findings, and none of the claims are cited.\",\"No concrete dimensions are covered: tenant isolation (row-level security, schema-per-tenant, or partition-key design), noisy-neighbor and throughput limits, query flexibility and joins, transactions, scaling model, cost model, operational burden, backup and restore per tenant, compliance and data residency, and migration or lock-in.\",\"'The best choice depends on your needs' and 'consider your requirements carefully' give no recommendation or decision criteria.\",\"No stated assumptions about the team's workload, such as tenant count, access patterns, or data size. It does not say what would tip the decision either way.\"],\"revision_instructions\":\"Redo this as a sourced research comparison for a multi-tenant SaaS. Cite official docs and credible sources, with a link for each substantive claim (AWS DynamoDB docs and pricing, PostgreSQL docs, AWS SaaS tenant isolation guidance, and reputable engineering write-ups). Cover these areas: (1) Tenant isolation models. For Postgres: shared table with tenant_id plus row-level security, schema-per-tenant, and database-per-tenant, with the scaling limits of each. For DynamoDB: a tenant-id partition key prefix, table-per-tenant, and IAM fine-grained access control with the LeadingKeys condition. (2) Noisy-neighbor and hot-partition risk, and capacity or throttling behavior. (3) Query and data-model flexibility: joins, ad-hoc and reporting queries, secondary indexes, and the need to know access patterns up front. (4) Transactions and consistency. (5) Scaling and operations: connection pooling, read replicas, and sharding or Citus for Postgres; serverless autoscaling for DynamoDB. (6) Cost model at small, medium, and large tenant counts, with a rough worked example and stated assumptions. (7) Per-tenant backup, restore, deletion, and compliance (for example GDPR), plus lock-in and migration. Finish with a comparison table and a clear recommendation. The recommendation should say when to pick each database and what default you suggest for a typical B2B SaaS, along with the assumptions behind it. Flag anything that is uncertain or unsourced.\",\"question_for_team\":\"\\\"\\\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-sonnet-5-5",
-   "case": "proto-wrong-thing",
-   "score": 1,
-   "ms": 4787,
-   "inTok": 1043,
-   "outTok": 579,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"The code is small and the meters-to-feet conversion works, but that isn't what was asked for.\"],\"issues\":[\"This is the wrong artifact. The pipeline goal is a tip calculator (bill amount, tip %, split between people). The prototype is a meters-to-feet unit converter.\",\"It has no bill amount input, no tip % input, no split-between-people input, and no tip or per-person output.\",\"It does nothing for the requested use case, so the core interaction can't be judged against the ask.\",\"Even as a converter it is minimal: the input is unlabeled, empty or invalid input isn't handled, and it has no styling.\"],\"revision_instructions\":\"Replace this with a working tip calculator in a single HTML file. Include: (1) a labeled numeric input for bill amount; (2) a tip % input, optionally with preset buttons such as 10/15/18/20; (3) a number-of-people input, minimum 1, default 1; (4) live-updating outputs for tip amount, total with tip, and amount per person, each formatted to 2 decimals. Handle empty, negative, or invalid input without showing NaN, and guard against 0 people. Example check: a bill of 100, 20% tip, and 4 people should give a tip of 20.00, a total of 120.00, and 30.00 per person. Remove all the unit converter content.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-sonnet-5-5",
-   "case": "proto-broken",
-   "score": 1,
-   "ms": 6448,
-   "inTok": 1034,
-   "outTok": 800,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Minimal structure with an input, a button and an output area, which is a starting point for a UI.\"],\"issues\":[\"Syntax error: `function calc( {` is missing the closing parenthesis, and the function body is missing its closing `}`. The script won't parse, so clicking Go does nothing.\",\"Tip percentage is not an input. The tip is hardcoded as 1.18 (an 18% tip), so the user can't choose it.\",\"There is no split-between-people input and no per-person result. One of the three required features is missing.\",\"Only the bill input exists. It has no label, no type=number, and no validation for empty, negative or non-numeric values.\",\"The output is a bare number with no breakdown (tip amount, total, per person) and no currency formatting or rounding. Floating-point results like 23.599999 are likely.\",\"It relies on implicit global element ids (`b`) instead of getElementById. This is fragile.\",\"The page has no title, viewport meta tag or styling, and it can't be used as a prototype.\"],\"revision_instructions\":\"Deliver a working single-file HTML tip calculator with three labeled numeric inputs: bill amount (type=number, min 0, step 0.01), tip % (default 15, editable, optionally with preset buttons for 10/15/18/20), and number of people (integer, min 1, default 1). Write valid JS. On click, or on input, read the values with parseFloat/parseInt and validate them. Show a clear message if the bill is empty or invalid, tip is negative, or people is below 1. Compute tip = bill * tip/100, total = bill + tip, and perShare = total / people. Display the tip amount, total and per-person amount, each formatted to 2 decimals with toFixed(2) or Intl.NumberFormat. Remove the hardcoded 1.18. Add a viewport meta tag and a title, and make sure the script runs without console errors. Check that bill=100, tip=20, people=4 gives tip 20.00, total 120.00 and 30.00 per person.\",\"question_for_team\":\"\\\"\\\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-sonnet-5-5",
-   "case": "proto-good",
-   "score": 0,
-   "ms": 8735,
-   "inTok": 1164,
-   "outTok": 1033,
-   "note": "revise 6/10 (expected pass)",
-   "output": "{\"verdict\":\"revise\",\"score\":6,\"strengths\":[\"The core math is correct: bill × (1 + tip/100) ÷ people, shown to 2 decimals.\",\"It updates live on every input and renders an initial value.\",\"It handles an empty bill (treated as 0) and empty or 0 people (treated as 1), so it never shows NaN or Infinity.\",\"It covers all three requested inputs: bill, tip % and split.\"],\"issues\":[\"Only the bill field has a placeholder. The tip (18) and people (2) fields have no labels, so a user sees three bare boxes and can't tell which is tip % and which is headcount.\",\"The output only says 'Each pays'. It doesn't show the tip amount or the total bill, which a tip calculator normally shows and which lets the user check the result.\",\"Negative values, fractional people (for example 2.5) and a negative tip are accepted and give nonsense results, such as a negative amount per person. There are no min or step attributes and no clamping.\",\"The bill() helper is defined oddly and mixes styles. This is minor, but the code is cramped and hard to maintain.\"],\"revision_instructions\":\"1) Add a visible <label> for each input: 'Bill amount ($)', 'Tip (%)' and 'People'. 2) Add min=0 and step=0.01 on the bill, min=0 on the tip, and min=1 and step=1 on people. In the JS, clamp people to a whole number of at least 1 and the bill and tip to at least 0. 3) Show the tip amount, the total, and the per-person amount in the output, for example 'Tip: $X · Total: $Y · Each pays: $Z'. 4) Tidy the JS by using one getElementById helper and removing the odd bill() function. Keep it a single self-contained HTML file.\",\"question_for_team\":\"\\\"\\\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.anthropic.claude-sonnet-5-5",
-   "case": "research-good",
-   "score": 0,
-   "ms": 12741,
-   "inTok": 1169,
-   "outTok": 1500,
-   "note": "revise 4/10 (expected pass)",
-   "output": "{\"verdict\":\"revise\",\"score\":4,\"strengths\":[\"Leads with a clear recommendation (Postgres) and a one-line rationale.\",\"The RLS claim is tied to a primary source, the official PostgreSQL docs.\",\"It names a real DynamoDB trade-off: access-pattern-driven key design and the need for export for ad-hoc analytics.\"],\"issues\":[\"The comparison is too thin for a database decision. It has three findings and no dimensions covered side by side. Missing: cost at the team's scale, tenant-isolation options on both sides, noisy-neighbor and per-tenant throughput limits, operational burden, schema evolution, and migration or lock-in.\",\"The answer asserts 'our joins-heavy reporting' as fact. Nothing in the findings shows where this workload fact came from. The recommendation depends on it, and no scale, tenant count or access patterns are stated.\",\"The DynamoDB pricing/latency finding does not support the conclusion. It is a pro-DynamoDB point ('single-digit ms at any scale') taken from a pricing page, which is marketing copy. It is never weighed against Postgres, and no Postgres cost or latency is given.\",\"The Athena/S3 export claim has no citation.\",\"The header says 'SOURCES: 6' but only 2 URLs appear. The other four cannot be checked.\",\"The comparison is one-sided. Nothing credits DynamoDB's strengths for multi-tenancy: IAM fine-grained access via dynamodb:LeadingKeys, per-tenant table or key strategies, and elastic scale. Nothing states the RLS caveats either: connection pooling and session variables, the table owner and superuser bypass, and the performance cost of policies.\",\"The write-up gives no confidence level and no conditions under which DynamoDB would win.\"],\"revision_instructions\":\"Rewrite as a sourced comparison. (1) Add a table or sections covering tenant isolation (Postgres RLS vs DynamoDB IAM LeadingKeys or table-per-tenant, with caveats for both), cost model at a stated scale, noisy-neighbor and throughput limits, reporting and analytics, operational burden, schema flexibility and lock-in. (2) Put an inline citation (URL) on every finding, including the Athena/S3 export claim. Cite only sources actually used, and list all of them so the count matches. Prefer AWS docs (not just the pricing page), Postgres docs, and a few independent benchmarks or engineering write-ups. (3) State the workload assumptions behind 'joins-heavy reporting', such as tenant count, data size, read/write mix and access patterns. If they come from the team, say so. If not, mark them as assumptions and show how the recommendation changes if they are wrong. (4) Add a 'when DynamoDB wins' section and a confidence level for the recommendation. (5) Drop or replace the 'single-digit ms at any scale' point unless it is balanced with Postgres latency data.\",\"question_for_team\":\"Roughly how many tenants and how much data/traffic do you expect (now and in 2 years), and is the joins-heavy reporting a confirmed requirement? Those numbers decide the cost and scaling comparison.\"}"
-  },
-  {
    "task": "brief",
    "model": "us.anthropic.claude-opus-5-5",
    "case": "decision-and-question",
@@ -1730,17 +1598,6 @@
    "output": "{\"summary\":\"The team is currently discussing non-project related topics such as coffee and wifi. No project-related decisions, questions, or tasks have been identified.\",\"goal\":\"The team is currently engaged in small talk and has not yet set a project goal.\",\"questions\":[],\"decisions\":[],\"ideas\":[],\"next_steps\":[],\"changed\":[]}"
   },
   {
-   "task": "review",
-   "model": "us.amazon.nova-pro-v1:0",
-   "case": "research-good",
-   "score": 1,
-   "ms": 795,
-   "inTok": 919,
-   "outTok": 54,
-   "note": "pass 8/10 (expected pass)",
-   "output": "{\"score\":8,\"verdict\":\"pass\",\"question_for_team\":\"\",\"issues\":[\"Minor formatting issues in the URLs, but they are otherwise correctly cited.\",\"revision_instructions=\",\"strengths=[\"]}"
-  },
-  {
    "task": "brief",
    "model": "us.amazon.nova-pro-v1:0",
    "case": "owners-and-next-steps",
@@ -1796,28 +1653,6 @@
    "output": "{\"summary\":\"The team is discussing the name for the product. Huddle was proposed but is already taken on the app store. The name is open for suggestions again.\",\"goal\":\"Decide on a product name.\",\"questions\":[{\"text\":\"What alternative product names should we consider?\",\"refs\":[4]}],\"ideas\":[{\"text\":\"Propose Huddle as the product name.\",\"refs\":[1,2],\"by\":\"Leo, Maya\"},{\"text\":\"Suggest an alternative product name.\",\"refs\":[3,4],\"by\":\"Sam, Leo\"}],\"next_steps\":[{\"owner\":\"Team\",\"text\":\"Brainstorm alternative product names.\",\"type\":\"decide\",\"refs\":[4],\"by\":\"Team\"}],\"changed\":[\"The product name Huddle was proposed but is already taken on the app store. The name is open for suggestions again.\"]}"
   },
   {
-   "task": "review",
-   "model": "us.amazon.nova-pro-v1:0",
-   "case": "research-vague",
-   "score": 1,
-   "ms": 1236,
-   "inTok": 833,
-   "outTok": 110,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"score\":1,\"revision_instructions\":\"Conduct thorough research with sourced findings that specifically address the requirements of a multi-tenant SaaS. Provide detailed pros and cons for both Postgres and DynamoDB in this context. Ensure all claims are properly sourced.\",\"strengths\":[],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The research lacks specific findings and sources.\",\"The comparison is too generic and does not address the multi-tenant SaaS context.\",\"Claims are not sourced.\"]}"
-  },
-  {
-   "task": "review",
-   "model": "us.amazon.nova-pro-v1:0",
-   "case": "research-offtopic",
-   "score": 1,
-   "ms": 1425,
-   "inTok": 841,
-   "outTok": 112,
-   "note": "revise 2/10 (expected revise)",
-   "output": "{\"score\":2,\"revision_instructions\":\"Please provide the specific pricing details for Linear, Jira, and Asana for a 10-person team. Ensure that the sources are relevant and credible, and directly support the pricing information.\",\"strengths\":[\"Basic information about the companies is provided.\"],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The research does not include pricing information for the specified tools.\",\"The sources provided do not seem to be directly relevant to the pricing information.\"]}"
-  },
-  {
    "task": "brief",
    "model": "us.amazon.nova-pro-v1:0",
    "case": "agent-request",
@@ -1827,39 +1662,6 @@
    "outTok": 214,
    "note": "faith 0.90 compl 1.00: **Faithfulness (0.90):** Almost all brief content is grounded in the events. The decision (free tier, Sam, ref #3) is accurate. The research",
    "output": "{\"summary\":\"The team has decided to launch with a free tier and is now researching how other teams price their per-seat collaboration tools to inform their pricing strategy.\",\"goal\":\"The team is trying to research how other teams price per-seat collaboration tools and decide on the pricing strategy for their own tool.\",\"decisions\":[{\"refs\":[3],\"text\":\"The team will launch with a free tier.\",\"by\":\"Sam\"}],\"next_steps\":[{\"owner\":\"Leo\",\"text\":\"Research how other teams price per-seat collaboration tools.\",\"type\":\"research\",\"refs\":[1,2],\"by\":\"Leo\"}],\"changed\":[\"Added goal, summary, and next steps based on new events.\"]}"
-  },
-  {
-   "task": "review",
-   "model": "us.amazon.nova-pro-v1:0",
-   "case": "proto-wrong-thing",
-   "score": 1,
-   "ms": 1217,
-   "inTok": 864,
-   "outTok": 108,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"score\":1,\"revision_instructions\":\"Please create a prototype for a tip calculator that takes in a bill amount, tip percentage, and number of people to split the bill between. The output should be the amount each person needs to pay.\",\"strengths\":[],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The prototype does not match the pipeline goal of a tip calculator. It is a unit converter instead.\",\"The prototype is not relevant to the task at hand.\"]}"
-  },
-  {
-   "task": "review",
-   "model": "us.amazon.nova-pro-v1:0",
-   "case": "proto-good",
-   "score": 0,
-   "ms": 1872,
-   "inTok": 962,
-   "outTok": 189,
-   "note": "revise 8/10 (expected pass)",
-   "output": "{\"score\":8,\"revision_instructions\":\"Rename the function 'f' to 'calculateTip' for clarity. Allow users to dynamically set the default tip percentage instead of hardcoding it to 18.\",\"strengths\":[\"The HTML and JavaScript code correctly implements the functionality of a tip calculator.\",\"The use of event listeners for input fields ensures that the tip calculation is updated in real-time as the user inputs values.\",\"The use of the toFixed method ensures that the output is formatted to two decimal places, which is appropriate for currency values.\"],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The function 'f' is not named descriptively. It should be named something like 'calculateTip' for clarity.\",\"The default value for the tip percentage is hardcoded to 18. It would be better to allow users to set this value dynamically.\"]}"
-  },
-  {
-   "task": "review",
-   "model": "us.amazon.nova-pro-v1:0",
-   "case": "proto-broken",
-   "score": 1,
-   "ms": 1645,
-   "inTok": 856,
-   "outTok": 165,
-   "note": "revise 3/10 (expected revise)",
-   "output": "{\"score\":3,\"revision_instructions\":\"Fix the 'calc' function to correctly calculate the tip based on user input for the bill amount and tip percentage, and to split the bill between people. Remove the unnecessary '{' character. Ensure that the tip percentage is not hardcoded but taken from user input.\",\"strengths\":[\"Basic HTML and JavaScript structure is present.\",\"Attempts to use input and output elements.\"],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The 'calc' function does not correctly calculate the tip.\",\"The 'calc' function does not split the bill between people.\",\"The tip percentage is hardcoded and not user-defined.\",\"The 'calc' function has a syntax error with an unnecessary '{' character.\"]}"
   },
   {
    "task": "brief",
@@ -1950,28 +1752,6 @@
    "output": "{\"summary\":\"Maya will write the uploads API tonight, Leo can take the landing page, and Sam owns recording a 2 minute demo video. The team decided the deadline is Sunday noon.\",\"goal\":\"Prepare the project deliverables for the Sunday noon deadline.\",\"questions\":[],\"decisions\":[{\"refs\":[4],\"text\":\"The deadline is Sunday noon.\",\"by\":\"Maya\"}],\"ideas\":[],\"next_steps\":[{\"owner\":\"Maya\",\"text\":\"Write the API for uploads tonight.\",\"type\":\"prototype\",\"refs\":[1],\"by\":\"Maya\"},{\"owner\":\"Leo\",\"text\":\"Do the landing page.\",\"type\":\"prototype\",\"refs\":[2],\"by\":\"Leo\"},{\"owner\":\"Sam\",\"text\":\"Record a 2 minute demo video.\",\"type\":\"prototype\",\"refs\":[3],\"by\":\"Sam\"}],\"changed\":[\"Set the deadline to Sunday noon.\",\"Added owners for uploads API, landing page, and demo video.\"]}"
   },
   {
-   "task": "review",
-   "model": "us.openai.gpt-5.5",
-   "case": "research-offtopic",
-   "score": 1,
-   "ms": 3263,
-   "inTok": 399,
-   "outTok": 255,
-   "note": "revise 2/10 (expected revise)",
-   "output": "{\"score\":2,\"verdict\":\"revise\",\"issues\":[\"The submitted research does not answer the pipeline goal: it provides background facts about Linear, Jira, and Asana rather than pricing for a 10-person team.\",\"No actual pricing figures, plan names, billing cadence, or total monthly/annual costs are provided.\",\"The source handling is inadequate: 'SOURCES: 3' is not a citation and does not let a teammate verify claims or pricing.\",\"It does not specify assumptions that affect pricing, such as monthly vs annual billing, currency, or which comparable plan tier is being priced.\"],\"strengths\":[\"It identifies the three products in scope, but only at a superficial background level.\"],\"revision_instructions\":\"Revise into a sourced pricing comparison for a 10-person team. For each product—Linear, Jira, and Asana—include the relevant plan name(s), per-user price, minimum/seat rules if any, calculated total for 10 users, billing cadence (monthly and/or annual if available), currency, and date accessed. Cite the official pricing page or vendor documentation with URLs for each price. Avoid unrelated company background unless needed for context.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.openai.gpt-5.5",
-   "case": "proto-wrong-thing",
-   "score": 1,
-   "ms": 2678,
-   "inTok": 419,
-   "outTok": 215,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"score\":1,\"verdict\":\"revise\",\"strengths\":[\"The submitted HTML is a minimal interactive prototype with working input/output behavior for a unit conversion task.\"],\"issues\":[\"It is the wrong artifact for the pipeline goal: the goal is a tip calculator, but the prototype is a unit converter.\",\"It does not include required inputs for bill amount, tip percentage, or number of people splitting the bill.\",\"It does not calculate or display tip amount, total bill, or per-person amount.\",\"The page title and labels are unrelated to the requested product.\"],\"revision_instructions\":\"Replace the unit converter with a working tip calculator prototype. It should provide inputs for bill amount, tip percentage, and number of people; compute at least the tip amount, total including tip, and amount per person; update results when inputs change; and label the UI clearly as a tip calculator. Keep it as a simple self-contained HTML prototype if desired, but ensure the core interaction matches the pipeline goal.\",\"question_for_team\":\"\"}"
-  },
-  {
    "task": "brief",
    "model": "us.openai.gpt-5.5",
    "case": "disagreement",
@@ -1981,50 +1761,6 @@
    "outTok": 219,
    "note": "faith 1.00 compl 1.00: **Faithfulness (1.0):** Every item in the brief is directly supported by the events. The summary accurately reflects all four events. The go",
    "output": "{\"summary\":\"The team is deciding who to target. Maya suggested hackathon teams, Sam argued agencies will pay, and Leo proposed asking people at the event before settling it.\",\"goal\":\"Decide whether to target hackathon teams or agencies.\",\"questions\":[{\"refs\":[1,2,3],\"text\":\"Should the target customer be hackathon teams or agencies?\"}],\"decisions\":[],\"ideas\":[{\"refs\":[1],\"text\":\"Target hackathon teams.\",\"by\":\"Maya\"},{\"refs\":[2],\"text\":\"Target agencies because they will actually pay.\",\"by\":\"Sam\"}],\"next_steps\":[{\"owner\":\"Maya\",\"text\":\"Run 5 quick interviews with people at the event.\",\"type\":\"ask\",\"refs\":[3,4],\"by\":\"Maya\"}],\"changed\":[\"Set the current focus to choosing a target customer.\",\"Captured competing target ideas: hackathon teams vs agencies.\",\"Added a next step to conduct 5 quick interviews at the event.\"]}"
-  },
-  {
-   "task": "review",
-   "model": "us.openai.gpt-5.5",
-   "case": "proto-broken",
-   "score": 1,
-   "ms": 3587,
-   "inTok": 417,
-   "outTok": 314,
-   "note": "revise 2/10 (expected revise)",
-   "output": "{\"score\":2,\"verdict\":\"revise\",\"strengths\":[\"Attempts a minimal HTML/JavaScript calculator with an input, button, and output area.\"],\"issues\":[\"The submitted artifact is not a working prototype: the JavaScript has a syntax error (`function calc( { ...`) and will not run.\",\"It does not meet the pipeline goal: there is only one input for bill amount, no user-controlled tip percentage, and no split-between-people input.\",\"It hardcodes an 18% tip (`* 1.18`) instead of calculating from the requested tip %.\",\"It does not display the required results clearly, such as tip amount, total bill, and per-person share.\",\"It relies on the global `b` element reference rather than explicitly reading `document.getElementById('b').value`, which is brittle.\",\"No basic input validation is present for empty, nonnumeric, negative, or zero-person split values.\"],\"revision_instructions\":\"Revise into a working HTML prototype for the requested tip calculator. Include labeled inputs for bill amount, tip percentage, and number of people; a Calculate button; and output showing at least tip amount, total including tip, and amount per person. Fix the JavaScript syntax so it runs in a browser, parse numeric input explicitly, and handle invalid values such as missing bill/tip or split less than 1 with a clear message. Keep it self-contained in one HTML file unless the team has specified otherwise.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.openai.gpt-5.5",
-   "case": "proto-good",
-   "score": 1,
-   "ms": 3836,
-   "inTok": 522,
-   "outTok": 304,
-   "note": "pass 7/10 (expected pass)",
-   "output": "{\"score\":7,\"verdict\":\"pass\",\"issues\":[\"The prototype is extremely barebones: no labels, currency formatting beyond the output, or visible indication of what the tip and people inputs represent except placeholders/defaults.\",\"Input validation is minimal. A split value of 0 is silently treated as 1 because of `||1`, and negative bill/tip/people values are accepted, which can produce nonsensical totals.\",\"The output only shows per-person total, not tip amount or total bill; however the stated goal only requires bill amount, tip %, and split between people, so this is acceptable for a minimal prototype.\"],\"strengths\":[\"It is the correct artifact for a prototype stage: a self-contained working HTML/JavaScript tip calculator.\",\"Core interaction plausibly works: changing bill, tip percentage, or number of people updates the per-person amount immediately.\",\"The calculation formula is correct for total-with-tip divided by number of people: `bill * (1 + tip/100) / people`.\",\"The default values allow immediate output and the app avoids crashing on an empty bill field.\"],\"revision_instructions\":\"Optional polish only: add labels for all three inputs, constrain bill/tip to nonnegative values and people to positive integers, and show a validation message instead of silently treating 0 people as 1. Consider displaying tip amount and total bill as supporting outputs, but the current prototype satisfies the stated goal.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.openai.gpt-5.5",
-   "case": "research-vague",
-   "score": 1,
-   "ms": 5591,
-   "inTok": 396,
-   "outTok": 465,
-   "note": "revise 1/10 (expected revise)",
-   "output": "{\"verdict\":\"revise\",\"score\":1,\"issues\":[\"The submission is not usable research for the stated goal. It provides only generic statements and no substantive comparison of Postgres vs DynamoDB for a multi-tenant SaaS.\",\"It has zero sources, despite being a research artifact. Claims about database characteristics, scalability, cost, operational constraints, consistency, tenant isolation, and SaaS fit need citations from official docs or credible references.\",\"It does not address multi-tenant SaaS-specific concerns such as tenant isolation models, query patterns, access control/RLS, schema evolution, noisy-neighbor risks, per-tenant scaling, backups/restores, compliance, cost predictability, migrations, analytics/reporting, and operational complexity.\",\"It gives no decision framework, recommendation, tradeoff matrix, or assumptions, so a teammate cannot use it to make or narrow the technology choice.\",\"It does not define workload assumptions such as tenant count, data model complexity, transaction requirements, read/write volume, latency goals, global distribution, or need for ad hoc queries.\"],\"strengths\":[\"Correct at a very superficial level that Postgres is relational and DynamoDB is NoSQL.\",\"Acknowledges that the right choice depends on requirements.\"],\"revision_instructions\":\"Replace this with a sourced research brief comparing Postgres and DynamoDB specifically for a multi-tenant SaaS. Include: (1) clear assumptions about the SaaS workload, or list unknowns that affect the decision; (2) a side-by-side comparison across data model/query flexibility, transactions/consistency, tenant isolation strategies, scalability, performance, cost model, operational burden, security/compliance, backups/restore, analytics/reporting, and migration/evolution; (3) SaaS-specific patterns such as Postgres shared-schema with tenant_id/RLS vs schema-per-tenant/database-per-tenant, and DynamoDB single-table design with tenant partition keys and IAM/condition-based isolation considerations; (4) risks and mitigations for each option; (5) a recommendation or decision matrix indicating when to choose Postgres, when to choose DynamoDB, and possible hybrid approaches; and (6) citations from official PostgreSQL/AWS documentation and reputable engineering references for all material claims.\",\"question_for_team\":\"\"}"
-  },
-  {
-   "task": "review",
-   "model": "us.openai.gpt-5.5",
-   "case": "research-good",
-   "score": 0,
-   "ms": 6342,
-   "inTok": 470,
-   "outTok": 567,
-   "note": "revise 4/10 (expected pass)",
-   "output": "{\"verdict\":\"revise\",\"score\":4,\"strengths\":[\"Gives a clear preliminary recommendation (Postgres) rather than staying neutral.\",\"Identifies several relevant comparison dimensions for multi-tenant SaaS: tenant isolation, reporting/query patterns, DynamoDB access-pattern design, and cost/performance model.\",\"Mentions Postgres RLS, which is directly relevant to tenant isolation.\"],\"issues\":[\"Artifact is too thin for a research deliverable comparing Postgres and DynamoDB for multi-tenant SaaS; a busy teammate could not use it as-is to make or defend a decision.\",\"Claims are not adequately sourced. URLs are partial/informal, one claim says 'SOURCES: 6' but only two source references are visible, and the DynamoDB pricing URL does not substantiate every performance/reporting claim.\",\"The comparison lacks important SaaS decision criteria: tenant model options, scale/traffic assumptions, consistency/transactions, schema evolution, backup/restore, operational complexity, security/compliance, cost drivers, migration/lock-in, failure modes, and when DynamoDB would be the better fit.\",\"Some claims are overbroad or need qualification: 'joins-heavy reporting is cheap' depends on indexes, data volume, workload isolation, and instance sizing; 'single-digit ms reads at any scale' needs precise AWS wording and caveats; 'ad-hoc reporting on DynamoDB usually needs export to S3 + Athena' needs support and alternatives such as OpenSearch/ETL/materialized views/streams.\",\"The recommendation does not explain assumptions about the team's workload beyond 'joins-heavy reporting'; it should separate facts from inferred assumptions and make the decision conditional where needed.\"],\"revision_instructions\":\"Revise into a complete sourced research brief. Include: (1) an executive recommendation for Postgres vs DynamoDB for a multi-tenant SaaS and the assumptions behind it; (2) a comparison table covering tenant isolation, query/reporting fit, transactions/consistency, scalability/performance, cost model, operational burden, security/compliance, backup/DR, schema flexibility, and lock-in; (3) concrete multi-tenant design notes for each option, including Postgres RLS/shared-schema vs schema-per-tenant considerations and DynamoDB partition/sort key, GSIs, hot partition, and access-pattern constraints; (4) a 'when DynamoDB wins' section so the recommendation is balanced; (5) cost/performance caveats rather than absolute claims; and (6) inline citations with full source links for each factual claim, using authoritative sources such as PostgreSQL docs and AWS DynamoDB docs/pricing/developer guide. Remove the unsupported 'SOURCES: 6' unless all six sources are listed and mapped to claims.\",\"question_for_team\":\"\"}"
   },
   {
    "task": "brief",
@@ -2619,6 +2355,270 @@
    "outTok": 1508,
    "note": "all checks pass",
    "output": "server.js, public/index.html, README.md"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "case": "proto-wrong-thing",
+   "score": 1,
+   "ms": 3482,
+   "inTok": 1212,
+   "outTok": 289,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Functional prototype structure: valid HTML with working input and output binding\",\"Demonstrates understanding of real-time calculation via oninput event\"],\"issues\":[\"Wrong artifact entirely: this is a unit converter, not a tip calculator\",\"Does not address any of the three required inputs: bill amount, tip %, split count\",\"No tip calculation logic present\",\"No split-per-person calculation present\"],\"revision_instructions\":\"Build a tip calculator prototype in HTML that accepts three inputs: (1) bill amount in dollars, (2) tip percentage, (3) number of people to split between. Display both the total tip amount and the per-person total (bill + tip, divided by people). Use real-time oninput events like the current prototype structure, but implement the correct calculations and form fields for the stated goal.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "case": "research-offtopic",
+   "score": 1,
+   "ms": 3730,
+   "inTok": 1195,
+   "outTok": 299,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[],\"issues\":[\"Does not answer the pipeline goal: no pricing information provided\",\"Provides only background facts (founding dates, company origins) unrelated to the ask\",\"No actual pricing data for any of the three tools\",\"No pricing comparison for a 10-person team scenario\",\"Sources cited (3) but no sourcing visible in the answer itself\"],\"revision_instructions\":\"Return to the research task and gather actual pricing data for Linear, Jira, and Asana. For each tool, find: current pricing tiers, cost per person or per team, total cost for a 10-person team (calculate if per-seat pricing), and any relevant notes (free tier, discounts, what's included). Include visible citations/sources for each price point. Do not include background facts about company history—focus only on answering the specific pricing question for this team size.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "case": "proto-broken",
+   "score": 1,
+   "ms": 4026,
+   "inTok": 1205,
+   "outTok": 353,
+   "note": "revise 2/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":[\"HTML structure is minimal and loads\",\"Attempts to use calculator pattern with button trigger\"],\"issues\":[\"Syntax error: missing closing parenthesis in function declaration\",\"Only hardcoded 18% tip—does not accept tip % as input from user\",\"No split-between-people feature at all\",\"No input fields for tip percentage or number of people\",\"Missing labels and basic UX (user won't know what to enter)\",\"Output unclear—doesn't show bill, tip amount, and per-person split separately\"],\"revision_instructions\":\"Fix the prototype to include: 1) Three input fields: bill amount, tip percentage (%), and number of people. 2) Labels for each field so users know what to enter. 3) A working calc() function that: computes total bill with tip, divides by number of people, and displays the per-person amount clearly. 4) Also show intermediate values (tip amount, total bill) so the user can verify the math. 5) Fix the syntax error (missing ')' in function declaration). Test the button click to ensure it actually runs and outputs results.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "case": "research-vague",
+   "score": 1,
+   "ms": 4375,
+   "inTok": 1185,
+   "outTok": 386,
+   "note": "revise 2/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":[\"Correctly identifies that one is relational and one is NoSQL\"],\"issues\":[\"No sources cited (0 sources for a research deliverable)\",\"Vague and generic statements with no specific comparisons\",\"Does not address multi-tenant SaaS context at all\",\"No analysis of tradeoffs relevant to the team's decision\",\"Reads like a placeholder rather than actionable research\",\"No data on performance, cost, scalability, or operational considerations\"],\"revision_instructions\":\"This is a research stage deliverable and must include sourced findings. Rewrite with specific, cited comparisons relevant to multi-tenant SaaS: (1) cite at least 5 authoritative sources (AWS docs, Postgres docs, benchmark reports, case studies); (2) compare concrete factors: scaling patterns (horizontal vs vertical), multi-tenancy support (row-level security in Postgres vs partition key design in DynamoDB), cost models (per-compute vs per-request), query flexibility (complex joins vs eventual consistency), operational burden, and vendor lock-in; (3) address the team's specific context (estimate transaction volume, query patterns, team expertise); (4) end with a sourced recommendation or decision framework. Do not deliver until you have researched actual documentation and credible benchmarks.\\\"\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "case": "proto-good",
+   "score": 1,
+   "ms": 4412,
+   "inTok": 1311,
+   "outTok": 363,
+   "note": "pass 8/10 (expected pass)",
+   "output": "{\"verdict\":\"pass\",\"score\":8,\"strengths\":[\"Core functionality works: calculates total with tip and splits correctly across people\",\"UI is minimal but functional: three labeled inputs (bill, tip %, people count) and output display\",\"Responsive: recalculates on any input change via oninput handlers\",\"Math is correct: applies tip percentage to bill, divides by number of people, formats to 2 decimals\",\"Lightweight prototype with no external dependencies\"],\"issues\":[\"Input placeholders could be clearer (e.g., 'Bill $' instead of just 'Bill'; 'Tip %' instead of 't')\",\"No labels visible on the page itself—only placeholder text, which disappears on focus\",\"Output label missing (unclear that the number shown is per-person cost)\",\"Default tip (18%) and people (2) are set but not labeled; user might not realize these are defaults\",\"No error handling: negative bill/tip/people values are not prevented, producing nonsensical results\",\"Minified variable names (b, t, p, f) make code harder to review, though this is fine for a prototype\"],\"revision_instructions\":\"\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-sonnet-5-5",
+   "case": "research-good",
+   "score": 1,
+   "ms": 5320,
+   "inTok": 1265,
+   "outTok": 573,
+   "note": "pass 6/10 (expected pass)",
+   "output": "{\"verdict\":\"pass\",\"score\":6,\"strengths\":[\"Leads with a clear recommendation (Postgres) and ties it to multi-tenant isolation and reporting needs.\",\"Key findings are concrete and two of them cite specific, relevant primary sources (Postgres RLS docs, DynamoDB pricing).\",\"Addresses the right comparison axes: tenant isolation, access-pattern design, and ad-hoc reporting.\"],\"issues\":[\"The third finding (reporting on DynamoDB needs S3 export + Athena) has no inline citation, even though SOURCES says 6; only 2 are visibly linked.\",\"The DynamoDB pricing/latency bullet doesn't support the answer; it is neutral or favors DynamoDB, and the report doesn't weigh it.\",\"The claim that joins-heavy reporting is cheap in Postgres is asserted without evidence, and the report gives no reporting-load numbers.\",\"There is no discussion of the cases where DynamoDB wins, such as massive scale, noisy-neighbor isolation, per-tenant cost attribution, or operational burden. Postgres RLS caveats are also missing: the performance overhead, and the fact that table owners and superusers bypass it.\",\"The recommendation depends on unstated assumptions about the team's scale and access patterns.\"],\"revision_instructions\":\"\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.amazon.nova-pro-v1:0",
+   "case": "research-good",
+   "score": 1,
+   "ms": 1167,
+   "inTok": 996,
+   "outTok": 98,
+   "note": "pass 9/10 (expected pass)",
+   "output": "{\"score\":9,\"revision_instructions\":\"\",\"strengths\":[\"Clear comparison with sourced findings.\",\"Identifies key advantages of Postgres for the use case.\",\"Provides links to official documentation for further reference.\"],\"verdict\":\"pass\",\"question_for_team\":\"\",\"issues\":[\"Consider adding a brief conclusion summarizing the key points for quick reference.\",\"The DynamoDB pricing link could be more specific to the on-demand pricing model.\"]}"
+  },
+  {
+   "task": "review",
+   "model": "us.amazon.nova-pro-v1:0",
+   "case": "research-vague",
+   "score": 1,
+   "ms": 1201,
+   "inTok": 910,
+   "outTok": 112,
+   "note": "revise 3/10 (expected revise)",
+   "output": "{\"score\":3,\"revision_instructions\":\"Conduct thorough research with sourced findings on the comparison between Postgres and DynamoDB, focusing on the specific requirements of the multi-tenant SaaS.\",\"strengths\":[],\"verdict\":\"revise\",\"question_for_team\":\"The research does not provide specific, sourced findings on the comparison between Postgres and DynamoDB. The team should decide on the specific requirements to guide the research.\",\"issues\":[\"The research lacks specific, sourced findings.\",\"The claims are not supported by sources.\"]}"
+  },
+  {
+   "task": "review",
+   "model": "us.amazon.nova-pro-v1:0",
+   "case": "research-offtopic",
+   "score": 1,
+   "ms": 1128,
+   "inTok": 918,
+   "outTok": 109,
+   "note": "revise 4/10 (expected revise)",
+   "output": "{\"score\":4,\"revision_instructions\":\"Provide specific pricing details for Linear, Jira, and Asana for a 10-person team, and ensure that the sources directly support these claims.\",\"strengths\":[\"Provides background information on the companies.\"],\"verdict\":\"revise\",\"question_for_team\":\"What specific pricing information is needed for each tool?\",\"issues\":[\"Lacks specific pricing details for a 10-person team.\",\"Sources do not provide pricing information.\"]}"
+  },
+  {
+   "task": "review",
+   "model": "us.amazon.nova-pro-v1:0",
+   "case": "proto-good",
+   "score": 1,
+   "ms": 1428,
+   "inTok": 1039,
+   "outTok": 87,
+   "note": "pass 9/10 (expected pass)",
+   "output": "{\"score\":9,\"revision_instructions\":\"\",\"strengths\":[\"The prototype correctly calculates the tip and split amount.\",\"The interface is simple and functional.\",\"The script is well-integrated with the HTML elements.\"],\"verdict\":\"pass\",\"question_for_team\":\"\",\"issues\":[\"Add labels to the input fields for clarity.\",\"Consider adding error handling for non-numeric inputs.\"]}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-sonnet-5-5",
+   "case": "research-vague",
+   "score": 1,
+   "ms": 7949,
+   "inTok": 1125,
+   "outTok": 968,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Correctly identifies Postgres as relational and DynamoDB as NoSQL.\"],\"issues\":[\"Not a research deliverable: four generic sentences with no findings, no comparison, no recommendation.\",\"Zero sources, so nothing can be verified.\",\"Ignores the multi-tenant SaaS context in the goal. It says nothing on tenant isolation, noisy neighbors, per-tenant cost, schema migrations, or scaling.\",\"No comparison dimensions such as data modeling, query flexibility, transactions, consistency, operational burden, pricing model, limits, or lock-in.\",\"'The best choice depends on your needs' restates the question and gives the team nothing to act on.\"],\"revision_instructions\":\"Redo this as sourced research comparing Postgres and DynamoDB specifically for a multi-tenant SaaS. Cite primary sources such as the official AWS DynamoDB docs and pricing pages, the PostgreSQL docs, and AWS SaaS multi-tenancy guidance (for example the SaaS Lens or the pool/silo/bridge models). Add a few credible engineering write-ups where useful.\\n\\nCover at least these dimensions, with a cited claim for each:\\n1. Tenant isolation models: Postgres row-level security, schema-per-tenant, and database-per-tenant, versus DynamoDB partition-key prefixing, table-per-tenant, and IAM fine-grained access using the LeadingKeys condition.\\n2. Noisy-neighbor and hot-partition risk, and how each system handles it.\\n3. Query flexibility: joins, ad-hoc and reporting queries, and secondary indexes, versus access-pattern-first design.\\n4. Transactions and consistency.\\n5. Scaling limits and operational burden. Cover Postgres connection limits, vertical scaling, read replicas, and partitioning or Citus. Cover DynamoDB's serverless auto-scaling and item size limits.\\n6. Cost model: provisioned versus on-demand pricing for DynamoDB, and instance-based pricing for Postgres. Include how each makes per-tenant cost attribution easier or harder.\\n7. Schema evolution, lock-in, and team skill fit.\\n\\nFinish with a comparison table and a recommendation, or a decision rule tied to concrete conditions. Examples of conditions are number of tenants, tenant size variance, and the need for ad-hoc queries. State any assumptions explicitly, and flag where the evidence is thin.\",\"question_for_team\":\"\\\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-sonnet-5-5",
+   "case": "research-offtopic",
+   "score": 1,
+   "ms": 4533,
+   "inTok": 1119,
+   "outTok": 516,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Brief and readable.\"],\"issues\":[\"Does not answer the question: no pricing for Linear, Jira or Asana is given.\",\"No 10-person team cost calculation (per-seat price × 10, monthly/annual).\",\"The content is background trivia (founding year, maker, founder), not pricing research.\",\"Claims 'SOURCES: 3' but lists no URLs or titles, so nothing is verifiable or tied to claims.\",\"No plan tiers, billing assumptions, or date of pricing check.\"],\"revision_instructions\":\"Redo the research to deliver sourced pricing findings. For each of Linear, Jira (Atlassian) and Asana, list the relevant plans (free, standard/paid, higher tiers) with the per-user price on monthly and annual billing. Then compute the total cost for exactly 10 users per month and per year for each plan, noting any minimum seats, user limits on free tiers (e.g. Jira free up to 10 users), and features that differ by tier. Cite the specific pricing page URL for every figure and state the date accessed. Add a short comparison table at the end. Drop the company-background trivia.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "case": "research-good",
+   "score": 0,
+   "ms": 8408,
+   "inTok": 1281,
+   "outTok": 712,
+   "note": "revise 4/10 (expected pass)",
+   "output": "{\"verdict\":\"revise\",\"score\":4,\"strengths\":[\"Identifies a real, relevant trade-off: Postgres RLS for tenant isolation vs. DynamoDB's partition-key design complexity\",\"Cites specific features (RLS, on-demand pricing, single-digit ms latency) that are factually accurate\",\"Recognizes the reporting gap in DynamoDB (export + Athena pattern)\",\"Sources are appropriate (PostgreSQL docs, AWS pricing page)\"],\"issues\":[\"Conclusion is premature and context-blind: recommends Postgres without discussing your actual workload (read/write ratio, scale, cost at your volume, consistency requirements, team expertise)\",\"Missing critical comparison dimensions: write scalability (Postgres vertical; DynamoDB horizontal), consistency model (strong vs. eventual), operational burden, and warm-up/cold-start patterns\",\"DynamoDB analysis is thin: doesn't discuss GSI costs, hot partition pitfalls, or whether your access patterns actually fit DynamoDB's model\",\"Reporting caveat buried: 'ad-hoc reporting' is vague—doesn't quantify latency/cost of export + Athena vs. Postgres queries\",\"No cost model: doesn't compare $/month at your projected scale (throughput, storage, connections)\"],\"revision_instructions\":\"Reframe the research as a trade-off analysis, not a recommendation. For each system, provide: (1) what your team gets out of the box (Postgres: ACID, RLS, SQL; DynamoDB: auto-scaling, pay-per-request); (2) what the tradeoffs cost in your context (e.g., RLS is native to Postgres but your app must enforce roles correctly; DynamoDB avoids scaling ops but requires schema design per access pattern). Add a section: \\\"Questions to answer before deciding\\\" covering workload (read/write mix, peak throughput, typical query latency SLA), scale (users, data volume, growth), cost targets, and team skill. Include a rough cost comparison at 2–3 realistic scenarios (e.g., \\\"1K active users, 80% reads, <100ms SLA\\\"). Cite concrete sources for each cost and latency claim (not generic).\",\"question_for_team\":\"What is your multi-tenant workload profile? Specifically: (a) read/write ratio and peak throughput per tenant, (b) typical query patterns (mostly single-tenant lookups, or cross-tenant analytics), (c) reporting frequency and latency tolerance, (d) data volume per tenant and growth horizon, (e) consistency requirement (strong or eventual OK?). This will let the researcher ground the comparison in your actual constraints instead of a generic answer.\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.amazon.nova-pro-v1:0",
+   "case": "proto-broken",
+   "score": 1,
+   "ms": 1870,
+   "inTok": 933,
+   "outTok": 144,
+   "note": "revise 3/10 (expected revise)",
+   "output": "{\"score\":3,\"revision_instructions\":\"Revise the prototype to allow for specifying the tip percentage and splitting the bill between people. Fix the syntax error in the calc function and ensure it performs the correct calculation based on the bill amount, tip percentage, and number of people to split the bill among.\",\"strengths\":[\"The prototype includes an input field for the bill amount and a button to trigger the calculation.\"],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The prototype does not allow for specifying the tip percentage.\",\"The prototype does not allow for splitting the bill between people.\",\"The script contains a syntax error in the calc function.\"]}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-sonnet-5-5",
+   "case": "proto-wrong-thing",
+   "score": 1,
+   "ms": 4444,
+   "inTok": 1139,
+   "outTok": 525,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"The code is small and the meters-to-feet conversion works for what it is.\"],\"issues\":[\"This is the wrong artifact. The goal is a tip calculator, but this is a meters-to-feet unit converter.\",\"There is no bill amount input, no tip % input, and no split-between-people input.\",\"It shows no tip amount, total, or per-person amount.\",\"There is no handling of empty or invalid input. An empty field shows 0.00.\"],\"revision_instructions\":\"Replace the unit converter with a working tip calculator in a single HTML file. Include: (1) a numeric input for the bill amount; (2) a tip % input, optionally with preset buttons such as 10/15/18/20 and a default of 15 or 18; (3) a number-of-people input, minimum 1, default 1. On every input event, compute and display the tip amount, the total (bill + tip), and the per-person amount (total / people). Format money to 2 decimals. Treat empty, negative, or invalid values safely: show 0.00 or a hint, and never show NaN. Set people to at least 1 so there is no divide-by-zero. Label all fields clearly and change the title to \\\"Tip calculator\\\".\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.amazon.nova-pro-v1:0",
+   "case": "proto-wrong-thing",
+   "score": 1,
+   "ms": 1077,
+   "inTok": 941,
+   "outTok": 97,
+   "note": "revise 2/10 (expected revise)",
+   "output": "{\"score\":2,\"revision_instructions\":\"Revise the artifact to create a tip calculator that takes bill amount, tip percentage, and split between people as inputs, and outputs the amount each person should pay.\",\"strengths\":[],\"verdict\":\"revise\",\"question_for_team\":\"\",\"issues\":[\"The artifact is not a tip calculator as requested.\",\"The artifact is a unit converter, which is not relevant to the pipeline goal.\"]}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-sonnet-5-5",
+   "case": "proto-good",
+   "score": 1,
+   "ms": 5986,
+   "inTok": 1260,
+   "outTok": 688,
+   "note": "pass 6/10 (expected pass)",
+   "output": "{\"verdict\":\"pass\",\"score\":6,\"strengths\":[\"The core interaction works. Bill, tip % and people each have an input, and all three update the result live through oninput.\",\"The math is correct: bill × (1 + tip/100) ÷ people, shown to 2 decimals.\",\"It handles an empty bill (treated as 0) and a 0 or empty people count (treated as 1), so it never shows NaN or Infinity.\",\"Defaults of 18% and 2 people give a sensible starting state, and f() runs on load.\",\"It is a single self-contained HTML file with no dependencies.\"],\"issues\":[\"The tip % and people inputs have no labels or placeholders, so a user can't tell which number field is which. Only the bill field has a placeholder.\",\"The output shows only the per-person amount. It doesn't show the tip amount or the total, which users usually expect.\",\"There is no validation. Negative values, fractional people, and a negative tip are all accepted.\",\"The code is cramped and has an odd `bill()` helper. There is no styling, and no min/step attributes or inputmode.\",\"The rounding is per-person only, so the shares may not sum exactly to the total.\"],\"revision_instructions\":\"\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.anthropic.claude-sonnet-5-5",
+   "case": "proto-broken",
+   "score": 1,
+   "ms": 6254,
+   "inTok": 1130,
+   "outTok": 758,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Correctly attempts a single-page HTML artifact, which is the right kind of deliverable for a prototype stage.\"],\"issues\":[\"Syntax error: `function calc( {` is missing the closing parenthesis, and the function body has no closing `}`. The script will not parse, so clicking Go does nothing.\",\"Tip percentage is hardcoded as `* 1.18`, which is an 18% tip. There is no tip % input.\",\"No split-between-people input or per-person calculation. Two of the three required inputs are missing.\",\"No input validation. Empty or non-numeric input gives NaN or 0 with no message.\",\"Output is a bare number with no labels. It doesn't show the tip, the total, or the per-person amount, and it isn't formatted as currency.\",\"Inputs have no labels, so a user can't tell what the single box is for. It also relies on implicit global IDs (`b.value`), which is fragile.\"],\"revision_instructions\":\"Deliver a working single-file HTML tip calculator. Requirements: (1) three labeled numeric inputs: bill amount, tip % (default 15 or 18, and optionally preset buttons), and number of people (default 1, minimum 1, integer). (2) A calc() function with valid syntax, called on button click or on input events. It should compute tip = bill*tip/100, total = bill+tip, and perPerson = total/people. (3) Show tip, total, and per-person amounts as labeled output, formatted to 2 decimals with toFixed(2). (4) Validate input: if the bill is empty, negative or NaN, or people is less than 1, show a short message instead of NaN. (5) Use document.getElementById explicitly and make sure the script has balanced parentheses and braces. Test it mentally with bill 100, tip 20 and 4 people. Expected result: tip 20.00, total 120.00, per person 30.00.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.openai.gpt-5.5",
+   "case": "research-offtopic",
+   "score": 1,
+   "ms": 2852,
+   "inTok": 470,
+   "outTok": 235,
+   "note": "revise 2/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":[\"Mentions all three requested products (Linear, Jira, Asana).\"],\"issues\":[\"Wrong/incomplete artifact for the research goal: the goal is to find pricing for a 10-person team, but the answer provides company background instead of prices.\",\"No actual pricing figures, plan names, billing assumptions, totals for 10 users, or date of pricing are provided.\",\"Sources are not identifiable or usable: 'SOURCES: 3' does not cite URLs, source names, or evidence, so claims cannot be verified.\"],\"revision_instructions\":\"Revise into a sourced pricing comparison for a 10-person team. For each of Linear, Jira, and Asana, include the relevant paid plan(s), per-user price, monthly and/or annual billing assumption, calculated total for 10 users, and links to official pricing pages or clearly cited sources. Note any important caveats such as free tiers, minimum seats, monthly vs annual rates, and date accessed. Avoid unrelated company background unless it directly affects pricing.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.openai.gpt-5.5",
+   "case": "proto-good",
+   "score": 1,
+   "ms": 2675,
+   "inTok": 593,
+   "outTok": 186,
+   "note": "pass 8/10 (expected pass)",
+   "output": "{\"score\":8,\"question_for_team\":\"\",\"issues\":[\"Minimal UI: fields are unlabeled beyond placeholders/defaults, so usability/accessibility could be improved.\",\"No validation for negative bill/tip/people or fractional/zero people; zero is coerced to 1, which may surprise users.\",\"Output only shows total per person, not tip amount or total bill; acceptable for the stated core goal but a nice-to-have.\"],\"revision_instructions\":\"\",\"strengths\":[\"Delivers the correct artifact for the prototype stage: a self-contained working HTML prototype.\",\"Core interaction works: bill amount, tip percentage, and number of people update the per-person amount live.\",\"Calculation is correct for standard inputs: bill * (1 + tip/100) divided by people, formatted to two decimals.\",\"Defaults are reasonable enough to let the prototype show behavior immediately.\"],\"verdict\":\"pass\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.openai.gpt-5.5",
+   "case": "proto-wrong-thing",
+   "score": 1,
+   "ms": 2557,
+   "inTok": 490,
+   "outTok": 197,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"issues\":[\"The submitted prototype is the wrong artifact for the pipeline goal: it is a unit converter, not a tip calculator.\",\"It does not include any of the required core inputs/interactions: bill amount, tip percentage, or split between people.\",\"It calculates meters to feet rather than tip amount, total bill, per-person split, and/or equivalent outputs needed for the requested calculator.\"],\"strengths\":[\"It is a minimal working HTML/JavaScript prototype in general, with a live input-to-output interaction.\"],\"revision_instructions\":\"Replace the unit converter with a working tip calculator prototype. It should include inputs for bill amount, tip percentage, and number of people; calculate the tip amount, total including tip, and amount owed per person; and update results reliably when inputs change. Use clear labels matching the requested workflow.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.openai.gpt-5.5",
+   "case": "research-vague",
+   "score": 1,
+   "ms": 3877,
+   "inTok": 467,
+   "outTok": 298,
+   "note": "revise 1/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":1,\"strengths\":[\"Identifies the broad category difference: Postgres is relational and DynamoDB is NoSQL.\"],\"issues\":[\"This is a research-stage artifact but contains no sourced findings despite the goal requiring a comparison for a multi-tenant SaaS.\",\"The content is too generic to be useful: it does not compare tenancy isolation models, query/access patterns, indexing, transactions/consistency, scaling, operational burden, cost model, backups/migrations, compliance/security, or vendor lock-in.\",\"It provides no recommendation framework or decision criteria tailored to a multi-tenant SaaS.\",\"Claims are unsourced and there are zero sources, which blocks use as research.\"],\"revision_instructions\":\"Revise into a sourced research comparison of Postgres vs DynamoDB specifically for a multi-tenant SaaS. Include citations from authoritative sources (official AWS/DynamoDB docs, PostgreSQL docs, and credible engineering/cost references). Cover at minimum: multi-tenant data modeling/isolation, access patterns and query flexibility, transactions/consistency, scaling and throughput limits, indexing, schema evolution, operational complexity, backup/restore, security/compliance controls, cost drivers, vendor lock-in, and when each database is preferable. End with a practical recommendation or decision matrix for the SaaS context. Include source links or a bibliography, and ensure each substantive claim is supported.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.openai.gpt-5.5",
+   "case": "proto-broken",
+   "score": 1,
+   "ms": 3310,
+   "inTok": 488,
+   "outTok": 281,
+   "note": "revise 2/10 (expected revise)",
+   "output": "{\"verdict\":\"revise\",\"score\":2,\"strengths\":[\"The artifact is an HTML prototype, which matches the prototype stage at a high level.\",\"It has a bill input, a button, and an output area, so the intended interaction is partially sketched.\"],\"issues\":[\"The prototype is not working: the JavaScript has a syntax error (`function calc( { ...`) and a missing closing brace/parenthesis, so clicking the button will fail.\",\"It does not implement the requested core inputs: there is no editable tip percentage input and no split-between-people input.\",\"It hard-codes an 18% multiplier (`1.18`) instead of using the user-provided tip %.\",\"It does not calculate or display split cost per person, which is central to the pipeline goal.\",\"The output lacks clear formatting/currency labeling.\"],\"revision_instructions\":\"Revise into a working HTML prototype for a tip calculator with three user inputs: bill amount, tip percentage, and number of people. On button click, compute tip amount, total bill including tip, and amount per person, then display those values. Fix all JavaScript syntax errors and use explicit DOM element lookups rather than relying on implicit globals. Include basic validation for missing/invalid/zero people input so the core interaction does not break.\",\"question_for_team\":\"\"}"
+  },
+  {
+   "task": "review",
+   "model": "us.openai.gpt-5.5",
+   "case": "research-good",
+   "score": 0,
+   "ms": 5283,
+   "inTok": 541,
+   "outTok": 438,
+   "note": "revise 4/10 (expected pass)",
+   "output": "{\"verdict\":\"revise\",\"score\":4,\"strengths\":[\"Gives a clear directional recommendation (Postgres) aligned with the stated comparison goal.\",\"Identifies relevant comparison dimensions for multi-tenant SaaS: tenant isolation, reporting/joins, DynamoDB access-pattern modeling, and request-based pricing.\"],\"issues\":[\"This is too thin for a research artifact comparing Postgres and DynamoDB: it only provides three terse bullets and no actual comparative analysis across dimensions a SaaS team would need (multi-tenancy model, scalability, cost drivers, operational burden, schema evolution, reporting, failure modes).\",\"Claims are not adequately sourced. Two URLs are named inline, but the stated 'SOURCES: 6' does not list the six sources, and the DynamoDB/Athena reporting claim has no cited source.\",\"One cited claim appears mismatched: the pricing page can support on-demand request charging, but it is not the best source for 'single-digit ms reads at any scale'; that performance claim needs an AWS DynamoDB feature/performance source and careful wording.\",\"The answer assumes 'our joins-heavy reporting' without evidence from the prompt/conversation. If that was established elsewhere it should be referenced; if not, the recommendation rests on an unstated requirement.\",\"The conclusion may be reasonable, but the research is not specific enough for a busy teammate to use as the comparison deliverable.\"],\"revision_instructions\":\"Revise into a sourced comparison brief, not just bullets. Include: (1) explicit assumptions about the SaaS workload, especially whether reporting is joins-heavy/ad hoc; (2) a side-by-side table comparing Postgres and DynamoDB for multi-tenant isolation, query model, scaling, cost model, consistency/transactions, operational complexity, analytics/reporting, and migration/evolution; (3) a recommendation with conditions where DynamoDB would be preferable; (4) citations next to each factual claim using accessible source titles/URLs, including all six sources if claiming six; and (5) avoid unsupported phrasing such as 'at any scale' unless directly sourced and scoped.\",\"question_for_team\":\"\"}"
   }
  ]
 }
