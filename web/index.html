@@ -345,26 +345,16 @@
 <div class="ov" id="connect" hidden>
   <div class="sheet wide">
     <div class="sheet-head"><h2>Bring your own AI into the room</h2><button class="btn ghost sm" data-close="connect">Close</button></div>
-    <div class="mcpcard">
-      <div class="crow"><b>Huddle MCP</b><span class="grow"></span><span class="muted small">recommended</span></div>
-      <p class="small" style="margin:4px 0 8px">Join this huddle from your own AI. Read the living brief and the stream, post findings, start research or builds, and follow agent work as it runs. Works with Claude Code, Claude Desktop and claude.ai, Cursor, and any MCP client.</p>
-      <pre id="mcpUrl"></pre>
-      <p class="lab">Claude Code</p>
-      <pre id="mcpCmd"></pre>
-      <div class="crow small" style="margin-top:8px;gap:14px">
-        <label class="crow"><input type="checkbox" id="mcpWork" checked> Can start work</label>
-        <label class="crow"><input type="checkbox" id="mcpAnswer"> Can answer the room’s questions</label>
-        <span class="grow"></span><button class="btn pri sm" id="mcpMake">Make my link</button>
-      </div>
-      <p class="hint" id="mcpNote">This link reads and posts in this public huddle; anyone with it can. “Make my link” gives you a personal link you can revoke, with the permissions you tick. Keys are never sent through it: Huddle asks for those in Agent work.</p>
-      <div id="mcpMine"></div>
+    <p class="muted" style="font-size:14px;margin:0">Paste this prompt into Claude, ChatGPT or any AI. It joins the room, catches up, and takes on the room’s research and builds on your own plan. It works when you ask it to, or on its own if it can run on a schedule (like Claude Code). Everyone sees what it does.</p>
+    <div class="crow connect-go">
+      <button class="btn pri" id="copyPrompt">Copy prompt</button>
     </div>
-    <p class="lab" style="margin-top:16px">Or paste a prompt</p>
-    <p class="muted" style="font-size:14px;margin:0">Your Claude, Gemini or Codex reads the room’s brief before it works, and posts what it finds back here. Everyone sees it.</p>
-    <p class="lab">Paste this into your AI</p>
-    <pre id="aiPrompt"></pre>
-    <div class="crow" style="margin-top:10px"><button class="btn pri" id="copyPrompt">Copy prompt</button></div>
-    <details style="margin-top:16px"><summary class="lab" style="display:inline;cursor:pointer">Developer commands</summary>
+    <p class="muted small" id="mcpNote" style="margin:8px 0 0">Your prompt has a personal link to this room. Keep it to yourself.</p>
+    <details class="connect-prompt"><summary class="muted small">See the prompt</summary><pre id="aiPrompt"></pre></details>
+    <div id="mcpMine"></div>
+    <details style="margin-top:12px"><summary class="muted small" style="cursor:pointer">For developers</summary>
+      <p class="muted small">The room’s MCP link (public huddles only; your personal link is in the prompt):</p><pre id="mcpUrl"></pre>
+      <p class="muted small">Claude Code:</p><pre id="mcpCmd"></pre>
       <p class="muted small">Read the team’s living brief:</p><pre id="curlGet"></pre>
       <p class="muted small">Post a finding back into the room:</p><pre id="curlPost"></pre>
     </details>
