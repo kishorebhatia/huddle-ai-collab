@@ -71,8 +71,8 @@ export async function findSandbox(role: string): Promise<Sandbox | null> {
 export async function deploySandbox(labels: Record<string, string>): Promise<Sandbox> {
   const create = () => api(`${API}/sandbox`, {
     method: "POST", headers: { "content-type": "application/json" },
-    // Keep demo links up for two hours of no traffic; delete a day after they stop.
-    body: JSON.stringify({ public: true, autoStopInterval: 120, autoDeleteInterval: 1440, labels: { app: "huddle", ...labels } }),
+    // Stop after 15 idle minutes to save credits (visits count as activity); stopped sandboxes keep their files.
+    body: JSON.stringify({ public: true, autoStopInterval: Number(Deno.env.get("SANDBOX_IDLE_MINUTES") ?? 15), autoDeleteInterval: 1440, labels: { app: "huddle", ...labels } }),
   });
   let res: Response | null = null;
   for (let i = 0; i < 3 && !res; i++) {

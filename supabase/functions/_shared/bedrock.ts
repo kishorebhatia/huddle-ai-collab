@@ -26,7 +26,7 @@ async function hmac(key: ArrayBuffer | Uint8Array, s: string) {
 
 /** POST /model/{id}/converse, signed with SigV4 (or a Bedrock API key). */
 // deno-lint-ignore no-explicit-any
-async function converse(modelId: string, payload: unknown): Promise<any> {
+export async function converse(modelId: string, payload: unknown): Promise<any> {
   const host = `bedrock-runtime.${REGION}.amazonaws.com`;
   const path = `/model/${encodeURIComponent(modelId)}/converse`;
   const body = JSON.stringify(payload);
@@ -145,7 +145,18 @@ export async function bedrock(body: any): Promise<GeminiResult> {
     [`llm.input_messages.${system.length ? 1 : 0}.message.role`]: "user",
     [`llm.input_messages.${system.length ? 1 : 0}.message.content`]: clip(promptText),
   }, async (s) => {
-    const res: any = await converse(modelId, payload);
+    let res: any;
+    try {
+      res = await converse(modelId, payload);
+    } catch (e) {
+      // Some models (e.g. Claude Sonnet 5.5, Opus 5.5) reject a forced tool choice; offer the tool and ask for it instead.
+      if (!String(e).includes("tool_choice") || !(payload as any).toolConfig?.toolChoice?.tool) throw e;
+      const p = payload as any;
+      res = await converse(modelId, {
+        ...p, toolConfig: { ...p.toolConfig, toolChoice: { auto: {} } },
+        system: [...(p.system ?? []), { text: "Answer only by calling the respond tool." }],
+      });
+    }
     const blocks = res.output?.message?.content ?? [];
     // Only our own "respond" tool carries the answer; Nova's grounding search shows up as toolUse too.
     const tool = blocks.find((b: any) => b.toolUse?.name === "respond")?.toolUse;
