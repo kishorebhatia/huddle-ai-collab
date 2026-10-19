@@ -138,8 +138,19 @@ credentials. Session credentials expire with the session.
    single case's faithfulness drops more than 0.35, which is what a bad prompt does to the "noise"
    case.
 
+7. **Plan and review gate** ([evals/gate-tasks.ts](evals/gate-tasks.ts)): runs this checkout's `PLAN_SYSTEM` and
+   `REVIEW_SYSTEM` on 8 labeled goals ([plan-cases.json](evals/plan-cases.json)) and 14 labeled artifacts
+   ([review-cases.json](evals/review-cases.json): 4 good, 10 bad, 4 of them subtly broken).
+   - Fails if plan accuracy drops more than 0.1 below [baseline-tasks.json](evals/baseline-tasks.json).
+   - Fails if review passes **any** bad artifact, or rejects good work more often than baseline + 0.25.
+   - Fails if review's mean score for bad work rises more than 1.5 above baseline.
+   - Each run is logged to Arize as experiments on `huddle-plan-regression` and `huddle-review-regression`.
+   - Checked: replacing the review prompt with a lenient one fails it (one bad prototype passed, and the
+     mean score for bad work rose from 2.5 to 4.45). The real prompt passes with plan accuracy 1.0 and no
+     review mistakes.
+
 Repository settings: secrets `EVAL_TOKEN` and `ARIZE_API_KEY`; variables `HUDDLE_URL` and `ARIZE_SPACE_ID`.
-To accept a new baseline, run `deno run -A evals/run.ts --update-baseline` and commit the file.
+To accept a new baseline, run `deno run -A evals/run.ts --update-baseline` (or `evals/gate-tasks.ts --update-baseline`) and commit the file.
 
 **Demo:** open a pull request that weakens the brief prompt. For example, replace "Never invent facts or
 decisions nobody stated" with "Be decisive… fill gaps with assumed decisions". The check fails: the

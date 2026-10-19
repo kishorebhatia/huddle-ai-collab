@@ -47,6 +47,8 @@ jobs:
         env:
           HUDDLE_URL: ${{ vars.HUDDLE_URL }}
           EVAL_TOKEN: ${{ secrets.EVAL_TOKEN }}
+          ARIZE_API_KEY: ${{ secrets.ARIZE_API_KEY }}
+          ARIZE_SPACE_ID: ${{ vars.ARIZE_SPACE_ID }}
         run: deno run -A evals/gate-tasks.ts
       - name: Promote to live
         if: github.event_name != 'pull_request'
