@@ -20,6 +20,7 @@ const TEXT_ONLY = ["us.meta.llama4-maverick-17b-instruct-v1:0"]; // no forced to
 const JUDGE = "us.anthropic.claude-sonnet-4-6";
 const short = (m: string) => m.replace(/^us\.(anthropic|amazon|openai|meta)\./, "").replace(/-\d{8}-v1:0|-v1:0/, "");
 const only = (Deno.args.find((a) => a.startsWith("--only=")) ?? "--only=brief,plan,review,build").slice(7).split(",");
+const pick = Deno.args.find((a) => a.startsWith("--models="))?.slice(9).split(",");
 
 // ---------- calling models ----------
 // deno-lint-ignore no-explicit-any
@@ -28,7 +29,10 @@ const lower = (s: Any): Any => Array.isArray(s) ? s.map(lower) : s && typeof s =
   ? Object.fromEntries(Object.entries(s).filter(([k]) => k !== "nullable").map(([k, v]) => [k, k === "type" ? String(v).toLowerCase() : k === "properties" ? Object.fromEntries(Object.entries(v as Any).map(([pk, pv]) => [pk, lower(pv)])) : lower(v)]))
   : s;
 
+// Some models cap output below what an app build asks for.
+const MAX_OUT: Record<string, number> = { "us.amazon.nova-pro-v1:0": 10000, "us.meta.llama4-maverick-17b-instruct-v1:0": 8192 };
 async function call(model: string, system: string, text: string, schema?: Any, maxTokens = 4096) {
+  maxTokens = Math.min(maxTokens, MAX_OUT[model] ?? maxTokens);
   const t0 = performance.now();
   const base: Any = { system: [{ text: system }], messages: [{ role: "user", content: [{ text }] }], inferenceConfig: { maxTokens } };
   if (schema) {
@@ -147,12 +151,13 @@ async function buildTask(model: string, c: typeof buildCases[number]) {
 
 // ---------- run ----------
 const jobs: (() => Promise<void>)[] = [];
-for (const m of MODELS) {
+const want = (m: string) => !pick || pick.some((p) => m.includes(p));
+for (const m of MODELS.filter(want)) {
   if (only.includes("brief")) for (const c of briefCases) jobs.push(() => attempt("brief", m, c.id, () => briefTask(m, c)));
   if (only.includes("plan")) for (const c of planCases) jobs.push(() => attempt("plan", m, c.id, () => planTask(m, c)));
   if (only.includes("review")) for (const c of reviewCases) jobs.push(() => attempt("review", m, c.id, () => reviewTask(m, c)));
 }
-for (const m of [...MODELS, ...TEXT_ONLY]) if (only.includes("build")) for (const c of buildCases) jobs.push(() => attempt("build", m, c.id, () => buildTask(m, c)));
+for (const m of [...MODELS, ...TEXT_ONLY].filter(want)) if (only.includes("build")) for (const c of buildCases) jobs.push(() => attempt("build", m, c.id, () => buildTask(m, c)));
 console.log(`${jobs.length} runs…`);
 const t0 = Date.now();
 await pool(jobs, 8);
@@ -161,7 +166,7 @@ console.log(`done in ${Math.round((Date.now() - t0) / 1000)} s`);
 // ---------- summarize ----------
 const out = new URL("bakeoff-results.json", import.meta.url);
 const prev = await Deno.readTextFile(out).then(JSON.parse).catch(() => ({ rows: [] }));
-const kept = prev.rows.filter((r: Row) => !only.includes(r.task));
+const kept = prev.rows.filter((r: Row) => !(only.includes(r.task) && want(r.model)));
 const all = [...kept, ...rows];
 await Deno.writeTextFile(out, JSON.stringify({ at: new Date().toISOString(), judge: JUDGE, rows: all }, null, 1));
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
