@@ -40,9 +40,12 @@ export const MEMBER_STAGES = ["research", "prototype", "review"];
 const ACTIVE_MS = 60 * 60_000;
 
 /** Should this stage wait for a member's AI instead of running on Huddle's models? */
-export async function forMembers(sb: SupabaseClient, room: Room, stage: string) {
+export async function forMembers(sb: SupabaseClient, room: Room, stage: string, pipeline?: { meta?: any }) {
   // The operator room changes Huddle itself; members' AIs contribute there with propose_change.
   if (room.id === OPERATOR_ROOM || !MEMBER_STAGES.includes(stage)) return false;
+  // A build that runs with the room's keys stays with Huddle: code from someone's AI would run in a
+  // sandbox holding those keys and could send them anywhere.
+  if (stage === "prototype" && (pipeline?.meta?.plan?.required_inputs ?? []).length) return false;
   const by = room.work_by ?? "auto";
   if (by === "members_first" || by === "members_only") return true;
   if (by !== "auto") return false;

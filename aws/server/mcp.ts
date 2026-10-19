@@ -23,6 +23,9 @@ const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SITE = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const DEFAULT_PUBLIC: Perms = { post: true, work: true, answer: false, tasks: true, tasks_per_day: 10 };
+// A connection without a personal link is identified only by a session id the client picks, so it can't
+// take tasks: the daily limit and "never review your own work" both key on a stable identity.
+const KEYLESS: Perms = { ...DEFAULT_PUBLIC, tasks: false };
 const LEASE_MIN = 20; // a claim lasts this long; claiming again (or submitting) renews it
 
 const INSTRUCTIONS = `You are connected to a Huddle room: a live workspace where a small team talks, and Huddle's agents
@@ -119,7 +122,7 @@ export function createMcp(opts: {
     if (r?.visibility === "private" && !(await opts.canSee(room, req.headers.get("authorization")))) {
       return { ok: false, perms: DEFAULT_PUBLIC, why: "This huddle is private: connect with a link minted from inside the room" };
     }
-    return { ok: true, perms: DEFAULT_PUBLIC };
+    return { ok: true, perms: KEYLESS };
   }
 
   const text = (t: string) => ({ content: [{ type: "text", text: t }] });

@@ -48,7 +48,7 @@ async function overBudget(sb: SupabaseClient, p: any, s: number, room: Room) {
 
 async function startStage(sb: SupabaseClient, p: any, s: number, room: Room, opts: { parentId?: number; instructions?: string } = {}) {
   const stage = p.stages[s];
-  const members = await forMembers(sb, room, stage);
+  const members = await forMembers(sb, room, stage, p);
   if (!members && await overBudget(sb, p, s, room)) return;
   const answers = (p.meta?.answers ?? []).map((a: any) => `- Q: ${a.q}\n  A: ${a.a}`).join("\n");
   const STAGE_ONLY: Record<string, string> = {
