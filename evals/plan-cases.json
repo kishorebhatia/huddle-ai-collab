@@ -1,0 +1,66 @@
+[
+ {
+  "id": "research-crm",
+  "goal": "Research the top 3 CRM tools for small agencies and compare their pricing.",
+  "deliverable": "research",
+  "backend": false,
+  "keys": []
+ },
+ {
+  "id": "tts-elevenlabs",
+  "goal": "Build a page where I type a sentence and hear it spoken with ElevenLabs.",
+  "deliverable": "app",
+  "backend": true,
+  "keys": [
+   "ELEVEN"
+  ]
+ },
+ {
+  "id": "tip-calculator",
+  "goal": "Make a tip calculator page we can use at dinner.",
+  "deliverable": "app",
+  "backend": false,
+  "keys": []
+ },
+ {
+  "id": "slack-bot",
+  "goal": "Build a Slack bot that posts our brief to #team every morning.",
+  "deliverable": "app",
+  "backend": true,
+  "keys": [
+   "SLACK"
+  ]
+ },
+ {
+  "id": "research-then-pricing",
+  "goal": "Find out what our three competitors charge, then build us a pricing page with mock plans.",
+  "deliverable": "app",
+  "backend": false,
+  "keys": []
+ },
+ {
+  "id": "github-dashboard",
+  "goal": "Prototype a dashboard of our repo's open GitHub issues using the GitHub API.",
+  "deliverable": "app",
+  "backend": true,
+  "keys": [
+   "GITHUB"
+  ]
+ },
+ {
+  "id": "db-comparison",
+  "goal": "Compare Postgres and DynamoDB for a multi-tenant SaaS like ours.",
+  "deliverable": "research",
+  "backend": false,
+  "keys": []
+ },
+ {
+  "id": "weather-widget",
+  "goal": "Build a weather widget for our office in New York using OpenWeather.",
+  "deliverable": "app",
+  "backend": true,
+  "keys": [
+   "OPENWEATHER"
+  ]
+ }
+]

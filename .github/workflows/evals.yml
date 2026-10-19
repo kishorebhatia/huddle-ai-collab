@@ -30,7 +30,7 @@ jobs:
         with:
           deno-version: v2.1.4
       - name: Type-check the server and functions
-        run: deno check aws/server/main.ts supabase/functions/*/index.ts evals/run.ts
+        run: deno check aws/server/main.ts supabase/functions/*/index.ts evals/run.ts evals/gate-tasks.ts
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -43,6 +43,11 @@ jobs:
           ARIZE_API_KEY: ${{ secrets.ARIZE_API_KEY }}
           ARIZE_SPACE_ID: ${{ vars.ARIZE_SPACE_ID }}
         run: deno run -A evals/run.ts
+      - name: Run plan and review evals (gate)
+        env:
+          HUDDLE_URL: ${{ vars.HUDDLE_URL }}
+          EVAL_TOKEN: ${{ secrets.EVAL_TOKEN }}
+        run: deno run -A evals/gate-tasks.ts
       - name: Promote to live
         if: github.event_name != 'pull_request'
         run: git push --force origin HEAD:refs/heads/live
