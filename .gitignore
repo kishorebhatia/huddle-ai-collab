@@ -18,6 +18,8 @@ node_modules/
 
 # AWS deploy secrets
 aws/.env
+aws/*.pem
+aws/*deploy_key*
 
 # demo video (large binary; share via Drive/YouTube)
 demo/*.mp4

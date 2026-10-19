@@ -14,6 +14,9 @@ Small teams lose hours between "we should build X" and a working link, and nobod
 - A goal needing an API key went live as a full-stack app in 80 seconds. The key appeared zero times in the page, database and logs.
 - Huddle shipped a feature to itself. It edited its prompt, type-checked the repo, opened PR #2, passed CI's evals, merged and deployed. No person touched the code.
 - CI's eval gate blocked a weakened prompt. The fix raised brief faithfulness from 0.88 to 0.92.
+- 12 simulated teams went from a conversation to a result on the live site: 4 research, 6 apps, 2 ElevenLabs voice apps. 12 of 12 finished; all 8 builds passed Anchor's browser test on the first try.
+- A bake-off of 10 Bedrock models on Huddle's own tasks (238 runs, logged to Arize) found the reviewer was rejecting good work. After the fix, review accuracy rose to 1.00 for Nova Pro and Sonnet 5.5. CI now gates the plan and review prompts as well as the brief.
+- Teammates' own AIs can take tasks from a room over MCP. Code from those AIs never runs where the room's keys live.
 
 ## Sponsor tech
 

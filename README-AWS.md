@@ -2,6 +2,9 @@
 
 **Live:** https://d2k5rbdeilbp1b.cloudfront.net/?room=demo
 
+**Runbook:** [aws/README.md](aws/README.md) covers provisioning, config, deploy, operations, backup, restore and teardown. **What we learned:**
+[aws/LEARNINGS.md](aws/LEARNINGS.md). **Model numbers:** [evals/BAKEOFF.md](evals/BAKEOFF.md).
+
 The same Huddle as [README.md](README.md): one link, everyone talks into their own laptop, and Huddle
 keeps one living brief and runs agent work for the room. This build runs entirely on AWS with no
 Supabase and no Gemini key, and adds three platforms to the agent loop:
@@ -304,10 +307,11 @@ built-in `p.html` page).
   the session. Use a Bedrock API key for anything longer.
 - **Voice notes and audio uploads** need a Gemini key; the Bedrock route would be Amazon Transcribe
   streaming.
-- **One server.** Uploads live on the instance's disk with no backups, and stopping the instance changes
-  its DNS name, which breaks the CloudFront origin. The next step is S3 plus an Elastic IP.
-- **Small eval set.** The judge is an LLM and scores vary by a few hundredths between runs. Eight cases
-  make a useful regression check, not proof.
+- **One server.** Uploads live on the instance's disk. Back them up with `aws/backup.sh`; the database is
+  saved without secrets, and the restore has been tested. Stopping the instance changes its DNS name unless it
+  has an Elastic IP, which `aws/provision.sh` attaches. S3 for uploads is next.
+- **Small eval sets.** The judge is an LLM and scores vary by a few hundredths between runs. Gates of
+  8–14 cases each make a useful regression check, not proof.
 - **Anchor's free plan** limits concurrent browsers. Page reads use the sessionless Web Unlocker; smoke
   tests use one short-lived session each, and if none is free the prototype still publishes, marked
   untested.

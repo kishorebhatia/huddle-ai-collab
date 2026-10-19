@@ -110,6 +110,9 @@ Every step is traced to Arize. Low scores become lessons and regression tests.
 - **Lean CI/CD:** prompts live in the repo. On each pull request, a GitHub Action runs the regression
   set against the changed prompts, logs the run as an Arize experiment, and fails if scores drop below
   the `main` baseline. Merging deploys to EC2.
+- **Three gates since Oct 19:** brief (8 conversations), plan (8 labeled goals) and review (14 labeled
+  artifacts, 4 of them subtly broken). Each run is an Arize experiment on `huddle-brief-regression`,
+  `huddle-plan-regression` or `huddle-review-regression`. A lenient review prompt fails the review gate.
 
 ## Demo for judges (about 5 minutes)
 
@@ -159,8 +162,8 @@ Any request there, even just "improve from evals", runs `improve → review → 
   Bedrock API key would make it permanent.
 - **Voice notes and audio uploads** need a Gemini key or Amazon Transcribe streaming.
 - **Open rooms.** Anyone with a room link can read and write it.
-- **One server.** Uploads live on the instance's disk and there are no backups. Stopping the instance
-  changes its address. S3 plus an Elastic IP is the next step.
+- **One server.** Uploads live on the instance's disk. `aws/backup.sh` and `aws/restore.sh` back it up
+  without secrets, and the restore has been tested. `aws/provision.sh` adds an Elastic IP; S3 for uploads is next.
 
 ## Measured with all four platforms (Oct 16)
 
@@ -177,4 +180,25 @@ A spoken request on the live site went through every stage in **140 seconds**:
 The whole run is one Arize trace, with scores attached to each stage. In CI, a weakened brief prompt
 dropped faithfulness from 0.88 to 0.83 and failed the check. Setup and config are in
 [README-AWS.md](README-AWS.md).
+
+## Measured at scale (Oct 19)
+
+- **Simulated teams, 12 of 12 end to end.** Scripted team conversations were posted into fresh rooms over
+  MCP, and Huddle ran each one in Full auto:
+  - 4 became research;
+  - 6 became static apps;
+  - 2 became ElevenLabs voice apps with a Node backend in Daytona, where the key lived only in the sandbox's `.env`.
+
+  All 8 builds passed Anchor's smoke test on the first try. At most 3 sandboxes ran at once, and each
+  was stopped as soon as its run ended.
+- **Bedrock bake-off.** 10 models on Huddle's brief, plan, review and build tasks: 238 runs, logged to Arize as 4 datasets and 37 experiments.
+  - Claude Haiku 4.5 stays the default. It is within 0.04 of the best on every task and 2–3× faster than Sonnet or Opus.
+  - Every review mistake by every model was a false rejection. After the fix, Nova Pro went 0.83 → 1.00 and Sonnet 5.5 0.67 → 1.00.
+  - On live rooms, a revision that reviews lower is now dropped in favor of the earlier version.
+- **Distilled datasets** in `evals/datasets/`:
+  - research runs labeled good, bad or unclear;
+  - builds with their smoke-test results;
+  - plans.
+
+  They feed the CI gates. The full findings are in [evals/BAKEOFF.md](evals/BAKEOFF.md) and [aws/LEARNINGS.md](aws/LEARNINGS.md).
 
