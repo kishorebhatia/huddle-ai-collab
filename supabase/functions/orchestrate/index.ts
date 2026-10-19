@@ -254,12 +254,20 @@ async function step(sb: SupabaseClient, pid: number) {
     // After a revision, keep whichever version reviewed better: revisions often come back worse
     // (in simulated runs, research groundedness fell 0.60 → 0.40 and 0.92 → 0.75 after one).
     const earlier = [...all].reverse().find((j) => j.stage_index === s && j.status === "done" && j.id < cur.id && j.review);
-    if (revs > 0 && earlier && Number(r.score ?? 0) < Number(earlier.review?.score ?? 0)) {
-      const revised = latestDone(s - 1);
+    const revised = latestDone(s - 1);
+    let worse = !!earlier && Number(r.score ?? 0) < Number(earlier.review?.score ?? 0);
+    if (revs > 0 && earlier && revised && !worse && Number(r.score ?? 0) === Number(earlier.review?.score ?? 0)) {
+      // Same review score: for research, the version whose claims the sources back better wins.
+      const { data: versions } = await sb.from("jobs").select("id, meta").eq("pipeline_id", p.id).eq("stage_index", s - 1)
+        .eq("status", "done").order("id", { ascending: false }).limit(2);
+      const g = (j: any) => Number(j?.meta?.evals?.groundedness?.score ?? NaN);
+      if (versions?.length === 2 && g(versions[0]) < g(versions[1])) worse = true;
+    }
+    if (revs > 0 && earlier && worse) {
       if (revised) {
         await sb.from("jobs").update({ status: "dismissed", updated_at: new Date().toISOString() }).eq("id", revised.id);
         await postEvent(sb, p.room_id,
-          `Kept the earlier version of "${p.title}" (${p.stages[s - 1]}): it reviewed ${earlier.review.score}/10 and the revision ${r.score ?? "?"}/10.`,
+          `Kept the earlier version of "${p.title}" (${p.stages[s - 1]}): the revision scored lower (review ${r.score ?? "?"}/10 vs ${earlier.review.score}/10, or less grounded in its sources).`,
           { pipeline_id: p.id, job_id: revised.id });
       }
     } else if (r.verdict === "revise" && revs < MAX_REVISIONS) {
