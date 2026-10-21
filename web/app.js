@@ -1821,14 +1821,23 @@ $("upNotify").onclick = notifyMe;
 $("upEmailInput").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); notifyMe(); } });
 
 // ---------- invite + connect your AI ----------
+// The link to share: a public huddle's carries its name so people can see what it is (only for show: renaming
+// never breaks old links). A private huddle's link stays nameless, like its preview.
+function shareLink() {
+  const base = `${location.origin}${location.pathname}?room=${encodeURIComponent(room)}`;
+  const name = isPrivateRoom() ? "" : state.room?.name || "";
+  const slug = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return slug ? `${base}&${slug}` : base;
+}
 // Invite always copies the room's link. In a private huddle the owner also gets People, where people who open
 // the link ask to join (or can be added by email so they get straight in).
 $("shareBtn").onclick = async () => {
   const owner = isPrivateRoom() && priv.status?.is_owner;
+  const link = shareLink();
   let copied = true;
-  try { await navigator.clipboard.writeText(location.href); } catch { copied = false; }
+  try { await navigator.clipboard.writeText(link); } catch { copied = false; }
   if (owner) await openPeople();
-  if (!copied) return prompt("Copy this link", location.href);
+  if (!copied) return prompt("Copy this link", link);
   toast("Link copied");
 };
 // Connect your AI: copy one prompt and go. It carries this person's own revocable link (made the first time
