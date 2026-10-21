@@ -223,7 +223,7 @@ async function linkPreview(room: string | null) {
   if (room && /^[\w-]{1,64}$/.test(room)) {
     const [r] = await sql`select name, visibility from public.rooms where id = ${room}`.catch(() => []);
     if (r?.visibility === "private") {
-      title = "You're invited to a private huddle";
+      title = "You’re invited to a private huddle";
       description = "Sign in with your email to join.";
     } else if (r?.name) title = `Join “${String(r.name).slice(0, 80)}” on Huddle`;
   }
