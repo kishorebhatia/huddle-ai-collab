@@ -1239,7 +1239,9 @@ function renderRoomMenu() {
       h("span", { class: "rdot", "aria-hidden": "true" }, "⚙"),
       h("span", { class: "grow" }, "Operator", h("small", {}, "Improve Huddle itself: changes go to GitHub as pull requests"))));
   }
+  $("delRoomBtn").hidden = isOperatorRoom();
 }
+const isOperatorRoom = () => room === config.OPERATOR_ROOM || !!state.room?.repo?.self;
 $("roomBtn").onclick = (ev) => {
   ev.stopPropagation();
   const m = $("roomMenu");
@@ -1313,6 +1315,65 @@ $("createRoom").onclick = async () => {
   try { await navigator.clipboard.writeText(link); } catch {}
   location.href = link;
 };
+
+// Deleting a huddle: type its name to confirm, then everyone still in it is told and sent to a fresh room.
+function openDelete() {
+  $("roomMenu").hidden = true;
+  if (!me) return toast("Join the huddle first");
+  if (isOperatorRoom()) return toast("The Operator room can't be deleted.");
+  const name = roomLabel(room);
+  $("delName").textContent = name;
+  const repo = state.room?.repo;
+  $("delRepo").hidden = !repo?.html_url;
+  if (repo?.html_url) $("delRepo").textContent = `Its GitHub repository, github.com/${repo.owner}/${repo.name}, stays. Delete it on GitHub if you want it gone too.`;
+  $("delConfirm").value = "";
+  $("delConfirm").placeholder = name;
+  $("delGo").disabled = true;
+  $("delRoom").hidden = false;
+  setTimeout(() => $("delConfirm").focus(), 50);
+}
+const delMatches = () => $("delConfirm").value.trim().toLowerCase() === roomLabel(room).trim().toLowerCase();
+function forgetRoomLocally(id) {
+  const i = myRooms.findIndex((r) => r.id === id);
+  if (i >= 0) myRooms.splice(i, 1);
+  store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
+  store.del(`huddle:pendingName:${id}`);
+}
+// Leave for the most recent other huddle in this browser, or a brand-new one.
+function leaveDeletedRoom() {
+  forgetRoomLocally(room);
+  const next = myRooms[0]?.id;
+  location.href = next ? `${location.pathname}?room=${encodeURIComponent(next)}` : location.pathname;
+}
+let roomDeleted = false;
+function onRoomDeleted() {
+  if (roomDeleted) return;
+  roomDeleted = true;
+  toast(`“${roomLabel(room)}” was deleted. Taking you to another huddle…`, 4000);
+  setTimeout(leaveDeletedRoom, 2500);
+}
+async function deleteRoom() {
+  if (!delMatches()) return;
+  const btn = $("delGo");
+  btn.disabled = true;
+  btn.textContent = "Deleting…";
+  try {
+    await fn("delete-room", { room, confirm: room });
+    roomDeleted = true;
+    roomChannel?.send({ type: "broadcast", event: "deleted", payload: {} });
+    leaveDeletedRoom();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Delete huddle";
+    // Non-2xx replies arrive as FunctionsHttpError; the friendly reason is in the response body.
+    const msg = (await e?.context?.json?.().catch(() => null))?.error || String(e?.message || "");
+    toast(/owns|operator/i.test(msg) ? msg : "Sorry, I couldn't delete this huddle. Please try again.");
+  }
+}
+$("delRoomBtn").onclick = openDelete;
+$("delConfirm").addEventListener("input", () => ($("delGo").disabled = !delMatches()));
+$("delConfirm").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); deleteRoom(); } });
+$("delGo").onclick = deleteRoom;
 
 // Private huddles aren't built yet: the switch explains that and collects interest.
 function openUpgrade() {
@@ -1856,7 +1917,10 @@ function subscribe() {
         if (p.host_url && !prev?.host_url) toast(`Live: ${p.title}`);
       })
     .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room}` },
-      ({ new: r }) => { const renamed = r.name && r.name !== state.room?.name; state.room = r; renderWork(); renderRoomName(); if (renamed) toast(`This huddle is now called “${r.name}”.`); })
+      ({ eventType, new: r }) => {
+        if (eventType === "DELETE") return onRoomDeleted();
+        const renamed = r.name && r.name !== state.room?.name; state.room = r; renderWork(); renderRoomName(); if (renamed) toast(`This huddle is now called “${r.name}”.`);
+      })
     .subscribe();
 
   roomChannel = sb.channel(`room-${room}`, { config: { presence: { key: clientId }, broadcast: { self: false } } });
@@ -1868,6 +1932,7 @@ function subscribe() {
     })
     .on("broadcast", { event: "stroke" }, ({ payload }) => drawStroke(payload.pts, payload.color))
     .on("broadcast", { event: "clear" }, () => { clearCanvas(); boardDirty = false; })
+    .on("broadcast", { event: "deleted" }, onRoomDeleted)
     .subscribe((status) => {
       if (status === "SUBSCRIBED" && me) roomChannel.track({ name: me, clientId, mic: false });
     });

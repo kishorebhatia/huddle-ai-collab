@@ -238,6 +238,7 @@
   <p class="lbl">Your huddles</p>
   <div id="roomList"></div>
   <button class="ritem new" id="newRoomBtn" role="menuitem"><span class="rdot" aria-hidden="true">+</span><span class="grow">Start a new huddle<small>Get a link to share in seconds</small></span></button>
+  <button class="ritem del" id="delRoomBtn" role="menuitem"><span class="rdot" aria-hidden="true">×</span><span class="grow">Delete this huddle<small>Removes it for everyone</small></span></button>
   <div class="monly" style="padding:8px 10px 4px">
     <button class="vswitch light" id="visSwitch2" role="switch" aria-checked="false" aria-label="Private huddle"><span class="vside vpub">Public</span><span class="vtrack" aria-hidden="true"><span class="vknob"></span></span><span class="vside vpriv">Private</span></button>
   </div>
@@ -274,6 +275,17 @@
     <button class="vswitch light" id="newVis" role="switch" aria-checked="false" aria-label="Private huddle"><span class="vside vpub">Public</span><span class="vtrack" aria-hidden="true"><span class="vknob"></span></span><span class="vside vpriv">Private</span></button>
     <p class="muted small" style="margin:4px 0 0">Public: anyone with the link can join.</p>
     <div class="crow" style="margin-top:18px"><button class="btn pri" id="createRoom">Start huddle and copy link</button></div>
+  </div>
+</div>
+
+<div class="ov" id="delRoom" hidden>
+  <div class="sheet" role="dialog" aria-label="Delete this huddle">
+    <div class="sheet-head"><h2>Delete “<span id="delName"></span>”?</h2><button class="btn ghost sm" data-close="delRoom">Cancel</button></div>
+    <p class="muted" style="font-size:14px;margin:0">This removes the huddle for everyone in it: notes, the board, the brief, all work and any files people shared. It can’t be undone.</p>
+    <p class="muted small" id="delRepo" hidden style="margin:8px 0 0"></p>
+    <label class="lab" for="delConfirm">Type the huddle’s name to confirm</label>
+    <input id="delConfirm" class="inp" autocomplete="off" />
+    <div class="crow" style="margin-top:18px"><button class="btn danger" id="delGo" disabled>Delete huddle</button></div>
   </div>
 </div>
 
