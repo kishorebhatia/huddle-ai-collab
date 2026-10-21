@@ -1,5 +1,6 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { bedrock } from "./bedrock.ts";
+import { openai } from "./openai.ts";
 
 export const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -31,6 +32,13 @@ export async function gemini(body: Record<string, unknown>, model = FAST_MODEL):
   if (Deno.env.get("AI_PROVIDER") === "bedrock" && !(GEMINI_KEY && hasAudio(body))) {
     return await bedrock(body);
   }
+  // AI_PROVIDER=openai: any OpenAI-compatible model. Audio, video and PDFs go to Gemini when a key is set
+  // (few such models read them); so does web search, if SEARCH_PROVIDER=gemini.
+  if (Deno.env.get("AI_PROVIDER") === "openai") {
+    const needsGemini = hasMime(body, (m) => m.startsWith("audio/") || m.startsWith("video/") || m === "application/pdf") ||
+      (Deno.env.get("SEARCH_PROVIDER") === "gemini" && hasSearch(body));
+    if (!(GEMINI_KEY && needsGemini)) return await openai(body);
+  }
   if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY secret is not set");
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -48,10 +56,14 @@ export async function gemini(body: Record<string, unknown>, model = FAST_MODEL):
 }
 
 // deno-lint-ignore no-explicit-any
-const hasAudio = (body: any) =>
+const hasMime = (body: any, test: (mime: string) => boolean) =>
   (body?.contents ?? []).some((c: any) =>
-    (c.parts ?? []).some((p: any) => String((p.inline_data ?? p.inlineData)?.mime_type ?? (p.inline_data ?? p.inlineData)?.mimeType ?? "").startsWith("audio/"))
+    (c.parts ?? []).some((p: any) => test(String((p.inline_data ?? p.inlineData)?.mime_type ?? (p.inline_data ?? p.inlineData)?.mimeType ?? "").split(";")[0]))
   );
+// deno-lint-ignore no-explicit-any
+const hasAudio = (body: any) => hasMime(body, (m) => m.startsWith("audio/"));
+// deno-lint-ignore no-explicit-any
+const hasSearch = (body: any) => (body?.tools ?? []).some((t: any) => t.google_search || t.googleSearch);
 
 /** Ask for JSON matching a schema and parse it. */
 export async function geminiJson<T>(
