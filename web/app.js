@@ -1827,16 +1827,9 @@ $("shareBtn").onclick = async () => {
   const owner = isPrivateRoom() && priv.status?.is_owner;
   let copied = true;
   try { await navigator.clipboard.writeText(location.href); } catch { copied = false; }
-  if (owner) {
-    await openPeople();
-    if (!copied) prompt("Copy this link", location.href);
-    else toast("Link copied. When they open it, they'll confirm their email and ask to join. Let them in here, or add their email below so they get straight in.", 7000);
-    return;
-  }
+  if (owner) await openPeople();
   if (!copied) return prompt("Copy this link", location.href);
-  toast(isPrivateRoom()
-    ? "Link copied. This huddle is private: they'll confirm their email and ask the owner to let them in."
-    : "Invite link copied. This huddle is public, so anyone with the link can join.", isPrivateRoom() ? 6000 : 2800);
+  toast("Link copied");
 };
 // Connect your AI: copy one prompt and go. It carries this person's own revocable link (made the first time
 // the panel opens, then reused) and tells their AI how to connect, catch up and take the room's tasks.
