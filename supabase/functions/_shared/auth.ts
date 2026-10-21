@@ -36,13 +36,49 @@ export async function verifyJwt(token: string): Promise<Claims | null> {
   }
 }
 
-/** Who is calling: a signed-in user, the server itself (service role), or nobody. */
-export async function caller(req: Request): Promise<{ uid: number | null; login?: string; service: boolean }> {
+export type Caller = {
+  uid: number | null; login?: string; service: boolean;
+  email?: string;      // signed in with an email code (private huddles)
+  guestRoom?: string;  // was in the room when it went private; may stay until the tab closes
+};
+
+/** Who is calling: a GitHub user, an email sign-in, a guest who stayed, the server itself, or nobody. */
+export async function caller(req: Request): Promise<Caller> {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  return await callerFromToken(token);
+}
+export async function callerFromToken(token: string): Promise<Caller> {
   const c = token ? await verifyJwt(token) : null;
   if (c?.role === "service_role") return { uid: null, service: true };
-  if (c?.role === "authenticated" && c.sub) return { uid: Number(c.sub), login: c.login, service: false };
-  return { uid: null, service: false };
+  if (c?.role !== "authenticated") return { uid: null, service: false };
+  return {
+    uid: c.sub ? Number(c.sub) : null, login: c.login, service: false,
+    email: typeof c.email === "string" ? c.email : undefined,
+    guestRoom: typeof c.guest_room === "string" ? c.guest_room : undefined,
+  };
+}
+
+export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();
+export const validEmail = (e: string) => /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(e) && e.length <= 254;
+
+// Members-only files: a per-room key that changes daily. Uploads in private rooms are served only with it.
+export async function fileKey(room: string, daysAgo = 0) {
+  const day = Math.floor(Date.now() / 86_400_000) - daysAgo;
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(), enc.encode(`file:${room}:${day}`)));
+  return b64url(sig).slice(0, 32);
+}
+export async function fileKeyOk(room: string, k: string | null) {
+  return !!k && (k === await fileKey(room) || k === await fileKey(room, 1));
+}
+/** Huddle's own functions fetch uploads by URL; add the room's file key so private rooms' files open too.
+ *  Only for a file in `room` itself, so one room can never be used to read another's files. */
+export async function withFileKey(url: string, room: string) {
+  // Only for this Huddle's own storage: never hand a room's key to another server.
+  const own = [Deno.env.get("PUBLIC_SITE_URL"), Deno.env.get("SUPABASE_URL")].filter(Boolean).map((u) => u!.replace(/\/$/, "") + "/storage/");
+  if (!own.some((o) => url.startsWith(o))) return url;
+  const m = url.match(/\/storage\/v1\/object\/public\/board\/([^/?#]+)\//);
+  if (!m || decodeURIComponent(m[1]) !== room || /[?&]k=/.test(url)) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}k=${await fileKey(room)}`;
 }
 
 // AES-GCM for GitHub tokens at rest; the key is derived from the JWT secret.

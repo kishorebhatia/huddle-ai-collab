@@ -22,8 +22,45 @@ function readAuth() {
   return { token: null, user: null };
 }
 const auth = readAuth();
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY, auth.token ? { global: { headers: { Authorization: `Bearer ${auth.token}` } } } : {});
-if (auth.token) sb.realtime.setAuth(auth.token);
+
+// Private huddles: an email sign-in (30 days, this browser) and, for people who were in a room when it went
+// private, a guest pass for that room that lasts until the tab closes.
+const jwtExp = (t) => { try { return JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).exp * 1000; } catch { return 0; } };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+const ssSet = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} };
+const roomParam = new URL(location.href).searchParams.get("room");
+// The Join button in an invite email: the link itself proves the email, so it signs you in.
+{
+  const invite = new URLSearchParams(location.hash.slice(1)).get("invite");
+  if (invite) {
+    history.replaceState(null, "", location.pathname + location.search);
+    try {
+      const r = await (await fetch(`${SUPABASE_URL}/functions/v1/people`, {
+        method: "POST", headers: { "content-type": "application/json", apikey: SUPABASE_KEY, authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({ action: "redeem_invite", invite }),
+      })).json();
+      if (r.token) { lsSet("huddle:session", r.token); lsSet("huddle:email", r.email); }
+      else if (r.error) ssSet("huddle:notice", r.error);
+    } catch { ssSet("huddle:notice", "Sorry, I couldn't open your invite. Sign in with your email instead."); }
+  }
+}
+const session = (() => {
+  const t = lsGet("huddle:session");
+  if (t && jwtExp(t) > Date.now()) return { token: t, email: lsGet("huddle:email") };
+  lsSet("huddle:session", null); lsSet("huddle:email", null);
+  return null;
+})();
+const guestToken = (() => {
+  const t = roomParam && ssGet(`huddle:guest:${roomParam}`);
+  return t && jwtExp(t) > Date.now() ? t : null;
+})();
+// Which pass this tab uses: a guest pass for this room (it carries the email sign-in too), then the email
+// sign-in, then GitHub.
+const bearer = guestToken || session?.token || auth.token;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, bearer ? { global: { headers: { Authorization: `Bearer ${bearer}` } } } : {});
+if (bearer) sb.realtime.setAuth(bearer);
 const signIn = (scope = "") => {
   location.href = `/auth/github/login?return=${encodeURIComponent(location.pathname + location.search)}${scope ? `&scope=${scope}` : ""}`;
 };
@@ -192,23 +229,23 @@ function renderStream() {
       }
     } else if (g.kind === "image") {
       const card = h("div", { class: "cardin" });
-      if (g.e.image_url) card.append(h("img", { src: g.e.image_url, alt: "Shared image", loading: "lazy", onclick: () => window.open(g.e.image_url, "_blank") }));
+      if (g.e.image_url) card.append(h("img", { src: fileUrl(g.e.image_url), alt: "Shared image", loading: "lazy", onclick: () => window.open(fileUrl(g.e.image_url), "_blank") }));
       if (g.e.text) {
         card.append(h("div", {}, toggle(open ? "Hide" : "What Huddle saw")));
         if (open) card.append(h("div", { class: "saw", html: md(g.e.text) }));
       }
       el.append(card);
     } else if (g.kind === "voice") {
-      el.append(h("div", { class: "evmedia" }, h("audio", { src: g.e.meta?.url, controls: true, preload: "metadata" })));
+      el.append(h("div", { class: "evmedia" }, h("audio", { src: fileUrl(g.e.meta?.url), controls: true, preload: "metadata" })));
       const text = g.e.text || "";
       const long = text.length > 280;
       el.append(h("div", { class: `evb${long && !open ? " clamp" : ""}` }, text));
       if (long) el.append(h("div", { class: "evlinks" }, toggle(open ? "Show less" : "Show more")));
     } else if (g.kind === "video" || g.kind === "file") {
       const box = h("div", { class: "evmedia" });
-      if (g.kind === "video") box.append(h("video", { src: g.e.meta?.url, controls: true, preload: "metadata", playsinline: true }));
+      if (g.kind === "video") box.append(h("video", { src: fileUrl(g.e.meta?.url), controls: true, preload: "metadata", playsinline: true }));
       else box.append(h("div", { class: "filerow" }, svgIcon('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>', 18),
-        h("a", { href: g.e.meta?.url, target: "_blank", rel: "noopener", class: "grow" }, g.e.meta?.name || "Open file")));
+        h("a", { href: fileUrl(g.e.meta?.url), target: "_blank", rel: "noopener", class: "grow" }, g.e.meta?.name || "Open file")));
       el.append(box);
       if (g.e.text) {
         el.append(h("div", { class: "evlinks" }, toggle(open ? "Hide" : g.kind === "video" ? "What Huddle saw" : "What Huddle read")));
@@ -541,10 +578,10 @@ function cardBody(item) {
   if (e.forgotten) return [h("small", {}, "Erased by its author.")];
   const title = (e.text || "").match(/^\*\*(.+?)\*\*/)?.[1] || e.meta?.title || e.meta?.name || "";
   const who = h("span", { class: "who" }, `${e.author} · ${clock(e.created_at)}`);
-  if (e.kind === "image") return [h("img", { src: e.image_url, alt: title || "Shared image", loading: "lazy" }), title ? h("b", { style: "margin-top:6px" }, title) : null, who];
-  if (e.kind === "video") return [h("video", { src: e.meta?.url, controls: true, preload: "metadata" }), title ? h("b", { style: "margin-top:6px" }, title) : null, who];
-  if (e.kind === "voice") return [h("span", { class: "kb" }, "Voice note"), h("audio", { src: e.meta?.url, controls: true, preload: "metadata" }), h("small", {}, clip(e.text || "", 160)), who];
-  if (e.kind === "file") return [h("span", { class: "kb" }, "File"), h("a", { href: e.meta?.url, target: "_blank", rel: "noopener" }, e.meta?.name || "Open file"), title ? h("small", {}, title) : null, who];
+  if (e.kind === "image") return [h("img", { src: fileUrl(e.image_url), alt: title || "Shared image", loading: "lazy" }), title ? h("b", { style: "margin-top:6px" }, title) : null, who];
+  if (e.kind === "video") return [h("video", { src: fileUrl(e.meta?.url), controls: true, preload: "metadata" }), title ? h("b", { style: "margin-top:6px" }, title) : null, who];
+  if (e.kind === "voice") return [h("span", { class: "kb" }, "Voice note"), h("audio", { src: fileUrl(e.meta?.url), controls: true, preload: "metadata" }), h("small", {}, clip(e.text || "", 160)), who];
+  if (e.kind === "file") return [h("span", { class: "kb" }, "File"), h("a", { href: fileUrl(e.meta?.url), target: "_blank", rel: "noopener" }, e.meta?.name || "Open file"), title ? h("small", {}, title) : null, who];
   if (e.kind === "link") return [h("span", { class: "kb" }, "Link"), h("a", { href: e.text, target: "_blank", rel: "noopener" }, clip(e.text || "", 80)), who];
   return [h("small", {}, clip(plain(e.text), 200)), who];
 }
@@ -748,7 +785,7 @@ function proofRow(p) {
   const evals = {};
   for (const m of metas) for (const [k, v] of Object.entries(m.evals || {})) evals[k] = v;
   const live = p.status === "running" ? pick("live_view_url") : null;
-  const shot = pick("screenshot_url"), sandbox = pick("sandbox_url"), trace = pick("trace_id");
+  const shot = fileUrl(pick("screenshot_url")), sandbox = pick("sandbox_url"), trace = pick("trace_id");
   if (!live && !shot && !sandbox && !trace && !Object.keys(evals).length) return null;
   const a = (href, text, cls, title) => h("a", { class: `proof ${cls}`, href, target: "_blank", rel: "noopener", title, onclick: (ev) => ev.stopPropagation() }, text);
   const fmt = (k, v) => k === "review_score" ? `${Math.round(v * 10)}/10` : ["smoke_test", "build_success"].includes(k) ? (v >= 1 ? "pass" : "fail") : v.toFixed(2);
@@ -1319,6 +1356,7 @@ $("createRoom").onclick = async () => {
   myRooms.unshift({ id, name });
   store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
   store.set(`huddle:pendingName:${id}`, name);
+  if ($("newVis").classList.contains("on")) ssSet("huddle:resume", `${id}:private`);
   const link = `${location.origin}${location.pathname}?room=${id}`;
   try { await navigator.clipboard.writeText(link); } catch {}
   location.href = link;
@@ -1411,34 +1449,263 @@ function openUpgrade() {
   setTimeout(() => $("upEmailInput").focus(), 50);
 }
 // With GitHub sign-in configured, the switch really makes the huddle (and its repository) private.
-async function toggleVisibility() {
-  if (!config.GITHUB_SIGNIN) return openUpgrade();
-  // Org-backed rooms only need you to sign in (to own the room); personal repos also need private-repo access.
-  if (!auth.token) return signIn(config.GITHUB_ORG ? "" : "private");
-  const to = state.room?.visibility === "private" ? "public" : "private";
-  try {
-    let r = await fn("github", { room, action: "visibility", visibility: to });
-    if (r.need_scope) return signIn("private");
-    if (r.confirm_public) {
-      if (!confirm(`Making this huddle public also makes github.com/${r.repo.owner}/${r.repo.name} public. Anything in it can then be copied by anyone. Continue?`)) return;
-      r = await fn("github", { room, action: "visibility", visibility: to, confirm_public: true });
-    }
-    state.room = { ...(state.room || { id: room }), visibility: r.visibility };
-    renderVisibility();
-    toast(r.visibility === "private" ? "Private: only you and people you invite (by GitHub username) can open this huddle." : "Public: anyone with the link can join.");
-  } catch (e) { toast(e.message); }
+// ---------- private huddles: email sign-in, the people list, asking to join ----------
+// Public: anyone with the link joins. Private: only emails the owner added get in; they sign in with a code
+// sent to their email (or the Join link in their invite). Anyone else can ask, and the owner lets them in.
+const priv = { status: null, polling: null, lastRequests: 0 };
+const isPrivateRoom = () => state.room?.visibility === "private";
+async function people(action, body = {}) {
+  try { return await fn("people", { action, room, ...body }); }
+  catch (e) { throw new Error((await e?.context?.json?.().catch(() => null))?.error || e.message); }
 }
-function renderVisibility() {
-  const priv = state.room?.visibility === "private";
-  for (const id of ["visSwitch", "visSwitch2"]) {
-    $(id).classList.toggle("on", priv);
-    $(id).setAttribute("aria-checked", String(priv));
-    $(id).title = priv ? "Private: only invited GitHub users can open it" : "Public: anyone with the link can join";
+async function loadPrivacy() {
+  try { priv.status = await people("status"); } catch { priv.status = null; }
+  state.fileKey = priv.status?.file_key || null;
+  renderVisibility();
+  if (priv.status?.is_owner && isPrivateRoom()) startRequestPolling();
+}
+// Files in a private huddle open only with the room's file key, which only people inside are given.
+function fileUrl(u) {
+  if (!u || !state.fileKey || !u.includes(`/storage/v1/object/public/board/${encodeURIComponent(room)}/`) || /[?&]k=/.test(u)) return u;
+  return `${u}${u.includes("?") ? "&" : "?"}k=${state.fileKey}`;
+}
+
+function signOutEmail() { lsSet("huddle:session", null); lsSet("huddle:email", null); ssSet(`huddle:guest:${room}`, null); location.reload(); }
+
+// The sign-in card: email -> code -> signed in (the page reloads with the new pass).
+function openEmailSignIn({ title, text, after } = {}) {
+  const body = $("privBody");
+  const step = (email) => {
+    body.innerHTML = "";
+    if (!email) {
+      const inp = h("input", { class: "inp", type: "email", autocomplete: "email", placeholder: "you@example.com", "aria-label": "Your email" });
+      const go = h("button", { class: "btn pri", onclick: () => send(inp.value, go) }, "Send me a code");
+      inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); go.click(); } });
+      body.append(h("h2", {}, title || "Sign in with your email"), h("p", { class: "muted", style: "font-size:14px;margin:0 0 14px" }, text || "We'll email you a 6-digit code."),
+        inp, h("div", { class: "crow", style: "margin-top:14px" }, go));
+      setTimeout(() => inp.focus(), 50);
+      return;
+    }
+    const code = h("input", { class: "inp codeinp", inputmode: "numeric", autocomplete: "one-time-code", maxlength: "6", placeholder: "••••••", "aria-label": "Your 6-digit code" });
+    const go = h("button", { class: "btn pri", onclick: () => verify(email, code.value, go) }, "Continue");
+    code.addEventListener("input", () => { if (code.value.replace(/\D/g, "").length === 6) go.click(); });
+    body.append(h("h2", {}, "Check your email"), h("p", { class: "muted", style: "font-size:14px;margin:0 0 14px" }, `We sent a code to ${email}. It works for 10 minutes.`),
+      code, h("div", { class: "crow", style: "margin-top:14px;gap:14px" }, go,
+        h("button", { class: "linkbtn", onclick: () => send(email) }, "Send a new code"),
+        h("button", { class: "linkbtn", onclick: () => step(null) }, "Use a different email")));
+    setTimeout(() => code.focus(), 50);
+  };
+  async function send(email, btn) {
+    email = String(email || "").trim();
+    if (!email) return toast("Type your email first");
+    if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+    try { await people("request_code", { email }); step(email); toast("Code sent. Check your email (and spam)."); }
+    catch (e) { toast(e.message); if (btn) { btn.disabled = false; btn.textContent = "Send me a code"; } }
   }
+  async function verify(email, code, btn) {
+    btn.disabled = true; btn.textContent = "Checking…";
+    try {
+      const r = await people("verify_code", { email, code });
+      lsSet("huddle:session", r.token); lsSet("huddle:email", r.email);
+      if (after) ssSet("huddle:resume", `${room}:${after}`);
+      location.reload();
+    } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = "Continue"; }
+  }
+  $("priv").hidden = false;
+  step(null);
+}
+
+// Outside a private huddle: sign in, or (signed in but not on the list) ask to join and wait.
+async function privateGate() {
+  let st = null;
+  try { st = await people("status"); } catch { /* shown below as not set up */ }
+  const body = $("privBody");
+  $("priv").hidden = false;
+  const notice = ssGet("huddle:notice"); ssSet("huddle:notice", null);
+  if (notice) toast(notice, 6000);
+  if (st && !st.email_ready && !session) {
+    body.innerHTML = "";
+    return body.append(h("h2", {}, "This huddle is private"), h("p", { class: "muted", style: "font-size:14px;margin:0" }, "Only people the owner invites can get in. Ask them to add you."));
+  }
+  if (!session) return openEmailSignIn({ title: "This huddle is private", text: "Sign in with your email to get in. We'll send you a 6-digit code." });
+  const r = await people("request_status").catch(() => ({ status: "none" }));
+  if (r.status === "pending") return waitForOwner();
+  body.innerHTML = "";
+  const name = h("input", { class: "inp", placeholder: "Your name", value: me || "", "aria-label": "Your name" });
+  const ask = h("button", { class: "btn pri", onclick: async () => {
+    ask.disabled = true;
+    try { await people("ask", { name: name.value }); if (name.value.trim()) { me = name.value.trim(); store.set("huddle:name", me); } waitForOwner(); }
+    catch (e) { toast(e.message); ask.disabled = false; }
+  } }, "Ask to join");
+  body.append(h("h2", {}, "This huddle is private"),
+    h("p", { class: "muted", style: "font-size:14px;margin:0 0 14px" }, r.status === "declined"
+      ? `The owner didn't let ${session.email} in last time. You can ask again.`
+      : `You're signed in as ${session.email}, which isn't on this huddle's list yet. Ask the owner to let you in.`),
+    name, h("div", { class: "crow", style: "margin-top:14px;gap:14px" }, ask, h("button", { class: "linkbtn", onclick: signOutEmail }, "Use a different email")));
+}
+function waitForOwner() {
+  const body = $("privBody");
+  body.innerHTML = "";
+  body.append(h("h2", {}, "Waiting for the owner"),
+    h("p", { class: "muted", style: "font-size:14px;margin:0" }, "We've asked them to let you in. This page opens the huddle as soon as they do, and we'll email you too."));
+  const t = setInterval(async () => {
+    const r = await people("request_status").catch(() => null);
+    if (r?.status === "admitted") { clearInterval(t); location.reload(); }
+    if (r?.status === "declined") { clearInterval(t); body.innerHTML = ""; body.append(h("h2", {}, "Not this time"), h("p", { class: "muted", style: "font-size:14px;margin:0" }, "The owner didn't let you in.")); }
+  }, 5000);
+}
+
+// Public -> private. First the owner-to-be confirms their email; then they list who may get in.
+async function toggleVisibility() {
+  $("roomMenu").hidden = true;
+  if (!me) return toast("Join the huddle first");
+  if (isPrivateRoom()) {
+    if (!priv.status?.is_owner) return toast("Only the owner can change who can get in.");
+    if (!confirm("Make this huddle public? Anyone with the link will be able to join.")) return;
+    try { await people("make_public"); state.room = { ...state.room, visibility: "public" }; renderVisibility(); toast("Public: anyone with the link can join."); }
+    catch (e) { toast(e.message); }
+    return;
+  }
+  if (priv.status && !priv.status.email_ready) return openUpgrade();
+  if (!session) return openEmailSignIn({ title: "First, confirm your email", text: "You'll be the owner of this private huddle. We'll send you a 6-digit code.", after: "private" });
+  $("mpEmails").value = "";
+  $("mpNotify").checked = false;
+  $("makePriv").hidden = false;
+  setTimeout(() => $("mpEmails").focus(), 50);
+}
+$("mpGo").onclick = async () => {
+  const btn = $("mpGo");
+  btn.disabled = true; btn.textContent = "Making it private…";
+  try {
+    // Hand everyone here a pass to stay, then switch. They get a moment to pick it up first.
+    const { stay } = await people("prepare_private");
+    roomChannel?.send({ type: "broadcast", event: "private", payload: { stay } });
+    await new Promise((r) => setTimeout(r, 2500));
+    const r = await people("make_private", { emails: $("mpEmails").value, notify: $("mpNotify").checked });
+    $("makePriv").hidden = true;
+    state.room = { ...state.room, visibility: "private" };
+    await loadPrivacy();
+    const n = r.added?.length || 0;
+    toast(`This huddle is private now${n ? `, with ${n} ${n === 1 ? "person" : "people"} added` : ""}.${r.sent ? " Invites sent." : ""}`, 5000);
+    if (r.skipped?.length) toast(`These don't look like emails: ${r.skipped.join(", ")}`, 6000);
+  } catch (e) { toast(e.message); }
+  btn.disabled = false; btn.textContent = "Make private";
+};
+// Someone else made this huddle private while we're in it: take the pass and stay.
+async function onWentPrivate({ payload }) {
+  if (priv.status?.is_owner) return;
+  try {
+    const r = await people("stay", { stay: payload?.stay });
+    ssSet(`huddle:guest:${room}`, r.token);
+    toast("This huddle is private now. You can stay until you close this tab.", 4000);
+    setTimeout(() => location.reload(), 1500);
+  } catch { /* the gate will explain once the page notices */ }
+}
+function onRemoved({ payload }) {
+  if (!session?.email || payload?.email !== session.email) return;
+  $("privBody").innerHTML = "";
+  $("privBody").append(h("h2", {}, "You no longer have access"), h("p", { class: "muted", style: "font-size:14px;margin:0" }, "The owner removed you from this huddle."));
+  $("priv").hidden = false;
+}
+
+function renderVisibility() {
+  const isPriv = isPrivateRoom();
+  for (const id of ["visSwitch", "visSwitch2"]) {
+    $(id).classList.toggle("on", isPriv);
+    $(id).setAttribute("aria-checked", String(isPriv));
+    $(id).title = isPriv ? "Private: only people the owner adds can get in" : "Public: anyone with the link can join";
+  }
+  const st = priv.status;
+  $("peopleBtn").hidden = !isPriv;
+  const n = st?.people?.length;
+  $("peopleLabel").textContent = n ? `Private · ${n} ${n === 1 ? "person" : "people"}` : "Private";
+  const reqs = st?.requests?.length || 0;
+  $("peopleBadge").hidden = !reqs;
+  $("peopleBadge").textContent = String(reqs);
 }
 $("visSwitch").onclick = toggleVisibility;
-$("newVis").onclick = openUpgrade;
 $("visSwitch2").onclick = toggleVisibility;
+$("newVis").onclick = () => {
+  const on = !$("newVis").classList.contains("on");
+  $("newVis").classList.toggle("on", on);
+  $("newVis").setAttribute("aria-checked", String(on));
+};
+
+// The owner hears about people asking to join while the huddle is open.
+function startRequestPolling() {
+  if (priv.polling) return;
+  priv.lastRequests = priv.status?.requests?.length || 0;
+  priv.polling = setInterval(async () => {
+    const st = await people("status").catch(() => null);
+    if (!st) return;
+    priv.status = st;
+    const n = st.requests?.length || 0;
+    if (n > priv.lastRequests) {
+      const r = st.requests[n - 1];
+      toast(`${r.name || r.email} wants to join. Open People to let them in.`, 6000);
+    }
+    priv.lastRequests = n;
+    renderVisibility();
+    if (!$("people").hidden) renderPeople();
+  }, 20000);
+}
+
+async function openPeople() {
+  try { priv.status = await people("status"); } catch (e) { return toast(e.message); }
+  renderVisibility();
+  renderPeople();
+  $("people").hidden = false;
+}
+function renderPeople() {
+  const st = priv.status || {};
+  const body = $("peopleBody");
+  body.innerHTML = "";
+  if (!st.is_owner) {
+    body.append(h("p", { class: "muted", style: "font-size:14px;margin:0" }, "This huddle is private: only people the owner adds can get in."),
+      st.me?.member ? h("div", { class: "crow", style: "margin-top:14px" },
+        h("button", { class: "btn danger-ghost", onclick: async () => {
+          if (!confirm("Leave this huddle? You'll need to be added again to get back in.")) return;
+          try { await people("leave"); signOutEmail(); } catch (e) { toast(e.message); }
+        } }, "Leave this huddle")) : null,
+      st.me?.email ? h("p", { class: "muted small", style: "margin-top:14px" }, `Signed in as ${st.me.email}. `, h("button", { class: "linkbtn", onclick: signOutEmail }, "Sign out")) : null);
+    return;
+  }
+  for (const r of st.requests || []) {
+    body.append(h("div", { class: "preq" }, h("span", { class: "grow" }, h("b", {}, r.name || r.email), r.name ? ` (${r.email})` : "", " wants to join"),
+      h("button", { class: "btn pri sm", onclick: async () => { try { await people("decide", { id: r.id, admit: true }); toast(`${r.name || r.email} is in.`); openPeople(); } catch (e) { toast(e.message); } } }, "Let in"),
+      h("button", { class: "btn ghost sm", onclick: async () => { try { await people("decide", { id: r.id, admit: false }); openPeople(); } catch (e) { toast(e.message); } } }, "No thanks")));
+  }
+  const add = h("textarea", { class: "inp", rows: "2", placeholder: "Add people by email: sam@example.com, priya@example.com" });
+  const send = h("button", { class: "btn pri", onclick: async () => {
+    if (!add.value.trim()) return toast("Type at least one email");
+    send.disabled = true;
+    try {
+      const r = await people("invite", { emails: add.value });
+      toast(r.added?.length ? `Added ${r.added.length}. ${r.sent ? "Invites sent." : "They can sign in with their email."}` : "They're already on the list.");
+      if (r.skipped?.length) toast(`These don't look like emails: ${r.skipped.join(", ")}`, 6000);
+      openPeople();
+    } catch (e) { toast(e.message); send.disabled = false; }
+  } }, "Send invites");
+  body.append(add, h("div", { class: "crow", style: "margin-top:10px" }, send));
+  const list = h("div", { class: "plist" });
+  for (const p of st.people || []) {
+    const status = p.role === "owner" ? "Owner (you)" : p.joined_at ? "Signed in" : "Not signed in yet";
+    const ais = (p.ais || []).map((l) => h("div", { class: "crow small muted", style: "margin:0" },
+      h("span", { class: "grow" }, `${l.label || "AI"} · added ${new Date(l.created_at).toLocaleDateString()}`),
+      h("button", { class: "linkbtn", onclick: async () => { try { await people("turn_off_ai", { id: l.id }); toast("Turned off."); openPeople(); } catch (e) { toast(e.message); } } }, "Turn off")));
+    list.append(h("div", { class: "prow" },
+      h("span", { class: "rdot", "aria-hidden": "true" }, (p.name || p.email).slice(0, 1).toUpperCase()),
+      h("span", { class: "grow" }, p.name ? `${p.name} · ${p.email}` : p.email, h("small", {}, status), ais.length ? h("div", { class: "ais" }, ...ais) : null),
+      p.role === "owner" ? null : h("button", { class: "btn danger-ghost sm", onclick: async () => {
+        if (!confirm(`Remove ${p.email}? They'll lose access, and any AI they connected is turned off.`)) return;
+        try { await people("remove", { email: p.email }); roomChannel?.send({ type: "broadcast", event: "removed", payload: { email: p.email } }); toast(`Removed ${p.email}.`); openPeople(); }
+        catch (e) { toast(e.message); }
+      } }, "Remove")));
+  }
+  body.append(h("p", { class: "lbl", style: "margin:18px 0 0" }, "Who can get in"), list,
+    h("p", { class: "muted small", style: "margin-top:12px" }, "Anyone else who opens the link can ask to join, and you'll see it here."));
+}
+$("peopleBtn").onclick = openPeople;
 
 // ---------- GitHub: sign in, back the room with a repository, publish ----------
 function renderGhButton() {
@@ -1552,15 +1819,24 @@ $("upNotify").onclick = notifyMe;
 $("upEmailInput").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); notifyMe(); } });
 
 // ---------- invite + connect your AI ----------
+// The link to share: a public huddle's carries its name so people can see what it is (only for show: renaming
+// never breaks old links). A private huddle's link stays nameless, like its preview.
+function shareLink() {
+  const base = `${location.origin}${location.pathname}?room=${encodeURIComponent(room)}`;
+  const name = isPrivateRoom() ? "" : state.room?.name || "";
+  const slug = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return slug ? `${base}&${slug}` : base;
+}
+// Invite always copies the room's link. In a private huddle the owner also gets People, where people who open
+// the link ask to join (or can be added by email so they get straight in).
 $("shareBtn").onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(location.href);
-    toast(state.room?.visibility === "private"
-      ? "Invite link copied. This huddle is private: invite people by GitHub username under GitHub."
-      : "Invite link copied. This huddle is public, so anyone with the link can join.");
-  } catch {
-    prompt("Copy this link", location.href);
-  }
+  const owner = isPrivateRoom() && priv.status?.is_owner;
+  const link = shareLink();
+  let copied = true;
+  try { await navigator.clipboard.writeText(link); } catch { copied = false; }
+  if (owner) await openPeople();
+  if (!copied) return prompt("Copy this link", link);
+  toast("Link copied");
 };
 // Connect your AI: copy one prompt and go. It carries this person's own revocable link (made the first time
 // the panel opens, then reused) and tells their AI how to connect, catch up and take the room's tasks.
@@ -1620,7 +1896,7 @@ async function personalLink() {
   const mine = store.json(`huddle:mcp:${room}`, []);
   if (mine[0]?.url) return mine[0].url;
   const r = await (await fetch("/mcp/links", {
-    method: "POST", headers: { "content-type": "application/json", ...(auth.token ? { authorization: `Bearer ${auth.token}` } : {}) },
+    method: "POST", headers: { "content-type": "application/json", ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
     body: JSON.stringify({ room, label: me || null, perms: LINK_PERMS }),
   })).json();
   if (r.error) throw new Error(r.error);
@@ -1867,6 +2143,7 @@ $("joinName").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev
 
 // A goal typed when the huddle was created becomes its first note, and starts the brief.
 async function afterJoin() {
+  if (priv.resumeAfterJoin) { priv.resumeAfterJoin = false; toggleVisibility(); }
   const goal = store.get(`huddle:goal:${room}`);
   if (!goal) return;
   store.del(`huddle:goal:${room}`);
@@ -1947,6 +2224,7 @@ function subscribe() {
     .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room}` },
       ({ eventType, new: r }) => {
         if (eventType === "DELETE") return onRoomDeleted();
+        if (r.visibility && r.visibility !== state.room?.visibility) setTimeout(loadPrivacy, 0);
         const renamed = r.name && r.name !== state.room?.name; state.room = r; renderWork(); renderRoomName(); if (renamed) toast(`This huddle is now called “${r.name}”.`);
       })
     .subscribe();
@@ -1961,6 +2239,8 @@ function subscribe() {
     .on("broadcast", { event: "stroke" }, ({ payload }) => drawStroke(payload.pts, payload.color))
     .on("broadcast", { event: "clear" }, () => { clearCanvas(); boardDirty = false; })
     .on("broadcast", { event: "deleted" }, onRoomDeleted)
+    .on("broadcast", { event: "private" }, onWentPrivate)
+    .on("broadcast", { event: "removed" }, onRemoved)
     .subscribe((status) => {
       if (status === "SUBSCRIBED" && me) roomChannel.track({ name: me, clientId, mic: false });
     });
@@ -1969,10 +2249,13 @@ function subscribe() {
 async function start() {
   // A private huddle you aren't in: the room row is hidden from you (RLS), so say why.
   const { data: visible } = await sb.from("rooms").select("id").eq("id", room).maybeSingle();
-  if (!visible && config.GITHUB_SIGNIN && (await roomExists())) return privateGate();
+  if (!visible && (await roomExists())) return auth.token && !session ? githubGate() : privateGate();
   if (!me) { $("join").hidden = false; renderJoinInfo(); }
   await loadInitial();
+  await loadPrivacy();
   subscribe();
+  // Back from confirming an email to make this huddle private (or a new huddle started as private).
+  if (ssGet("huddle:resume") === `${room}:private`) { ssSet("huddle:resume", null); if (me) toggleVisibility(); else priv.resumeAfterJoin = true; }
   if (!me) $("joinName").focus();
   else afterJoin();
 }
@@ -1983,7 +2266,7 @@ async function roomExists() {
   return !!error; // no error: we just created it, so it didn't exist
 
 }
-function privateGate() {
+function githubGate() {
   $("gh").hidden = false;
   const body = $("ghBody");
   body.innerHTML = "";

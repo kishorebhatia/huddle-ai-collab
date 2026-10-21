@@ -1,5 +1,6 @@
 // POST { room, author, image_url, caption? } -> Gemini reads the sketch/photo/screenshot, inserts an 'image' event
 import { cors, db, FAST_MODEL, geminiJson, json, toBase64 } from "../_shared/util.ts";
+import { withFileKey } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -7,7 +8,7 @@ Deno.serve(async (req) => {
     const { room, author, image_url, caption } = await req.json();
     if (!room || !image_url) return json({ error: "room and image_url required" }, 400);
 
-    const img = await fetch(image_url);
+    const img = await fetch(await withFileKey(image_url, String(room)));
     if (!img.ok) throw new Error(`could not fetch image: ${img.status}`);
     const mime = img.headers.get("content-type")?.split(";")[0] ?? "image/png";
     const data = toBase64(await img.arrayBuffer());

@@ -25,6 +25,7 @@ services:
       - ../supabase/migrations/20261016060000_operator_v2.sql:/docker-entrypoint-initdb.d/21_operator_v2.sql:ro
       - ../supabase/migrations/20261017000000_member_tasks.sql:/docker-entrypoint-initdb.d/22_member_tasks.sql:ro
       - ../supabase/migrations/20261020000000_delete_room.sql:/docker-entrypoint-initdb.d/23_delete_room.sql:ro
+      - ../supabase/migrations/20261021000000_email_private.sql:/docker-entrypoint-initdb.d/24_email_private.sql:ro
       - ./db/99_realtime.sql:/docker-entrypoint-initdb.d/99_realtime.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d huddle"]
