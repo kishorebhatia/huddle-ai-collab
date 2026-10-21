@@ -213,6 +213,34 @@ async function storage(req: Request, path: string): Promise<Response> {
   return new Response("not found", { status: 404 });
 }
 
+// ---------- link previews ----------
+// What iMessage, WhatsApp, Slack and email show for a pasted room link. A public room shows its name; a
+// private one says only that it's private, since the preview reaches anyone the link does.
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+async function linkPreview(room: string | null) {
+  let title = "Join a huddle";
+  let description = "A shared space to talk it through and get it done together.";
+  if (room && /^[\w-]{1,64}$/.test(room)) {
+    const [r] = await sql`select name, visibility from public.rooms where id = ${room}`.catch(() => []);
+    if (r?.visibility === "private") {
+      title = "You're invited to a private huddle";
+      description = "Sign in with your email to join.";
+    } else if (r?.name) title = `Join “${String(r.name).slice(0, 80)}” on Huddle`;
+  }
+  const t = escapeHtml(title), d = escapeHtml(description);
+  return [
+    `<title>${t}</title>`,
+    `<meta name="description" content="${d}" />`,
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="Huddle" />`,
+    `<meta property="og:title" content="${t}" />`,
+    `<meta property="og:description" content="${d}" />`,
+    `<meta name="twitter:card" content="summary" />`,
+    `<meta name="twitter:title" content="${t}" />`,
+    `<meta name="twitter:description" content="${d}" />`,
+  ].join("\n  ");
+}
+
 // ---------- private rooms ----------
 // RLS guards REST reads; these guard what RLS can't see: function calls and realtime fan-out.
 async function canSee(room: string, authorization: string | null) {
@@ -398,8 +426,9 @@ async function handle(req: Request): Promise<Response> {
     const html = await Deno.readTextFile(`${ROOT}web/index.html`);
     const stamp = async (f: string) => (await Deno.stat(`${ROOT}web/${f}`)).mtime?.getTime().toString(36) ?? "0";
     const [js, css] = await Promise.all([stamp("app.js"), stamp("style.css")]);
-    return new Response(html.replace('src="./app.js"', `src="./app.js?v=${js}"`).replace('href="./style.css"', `href="./style.css?v=${css}"`),
-      { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    const page = html.replace('src="./app.js"', `src="./app.js?v=${js}"`).replace('href="./style.css"', `href="./style.css?v=${css}"`)
+      .replace("<title>Huddle</title>", await linkPreview(url.searchParams.get("room")));
+    return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
   }
   // The app files change together on every update, so browsers (and any cache in front, like Cloudflare)
   // must check back each load. serveDir's ETag keeps that cheap: an unchanged file comes back as a 304.
