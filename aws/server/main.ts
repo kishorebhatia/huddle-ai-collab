@@ -393,6 +393,15 @@ async function handle(req: Request): Promise<Response> {
     );
   }
   if (p === "/healthz") return Response.json({ ok: true, functions: [...handlers.keys()], sockets: clients.size });
+  // The page names its script and styles with a version (their last-change time), so a copy kept anywhere,
+  // in a browser, an installed app or Cloudflare, is never used with a newer page.
+  if (p === "/" || p === "/index.html") {
+    const html = await Deno.readTextFile(`${ROOT}web/index.html`);
+    const stamp = async (f: string) => (await Deno.stat(`${ROOT}web/${f}`)).mtime?.getTime().toString(36) ?? "0";
+    const [js, css] = await Promise.all([stamp("app.js"), stamp("style.css")]);
+    return new Response(html.replace('src="./app.js"', `src="./app.js?v=${js}"`).replace('href="./style.css"', `href="./style.css?v=${css}"`),
+      { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+  }
   // The app files change together on every update, so browsers (and any cache in front, like Cloudflare)
   // must check back each load. serveDir's ETag keeps that cheap: an unchanged file comes back as a 304.
   const res = await serveDir(req, { fsRoot: `${ROOT}web`, quiet: true });
