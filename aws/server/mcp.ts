@@ -113,9 +113,18 @@ export function createMcp(opts: {
   async function access(room: string, key: string | null, req: Request): Promise<{ ok: boolean; perms: Perms; why?: string; link?: Any }> {
     const [r] = await sql`select visibility from public.rooms where id = ${room}`;
     if (key) {
-      const [link] = await sql`select id, room_id, perms, revoked_at, cursor_event_id from public.mcp_links where token_hash = ${await sha256(key)}`;
+      const [link] = await sql`select id, room_id, perms, revoked_at, cursor_event_id, created_by_email from public.mcp_links where token_hash = ${await sha256(key)}`;
       if (!link || link.revoked_at) return { ok: false, perms: DEFAULT_PUBLIC, why: "This Huddle link was revoked or doesn't exist" };
       if (link.room_id !== room) return { ok: false, perms: DEFAULT_PUBLIC, why: "This Huddle link is for another room" };
+      // A private huddle only honours links made by someone still on its list (or its GitHub owner/members).
+      if (r?.visibility === "private" && link.created_by_email &&
+        !(await sql`select 1 from public.room_people where room_id = ${room} and email = ${link.created_by_email}`).length) {
+        return { ok: false, perms: DEFAULT_PUBLIC, why: "The person who made this link is no longer in this private huddle" };
+      }
+      if (r?.visibility === "private" && !link.created_by_email &&
+        (await sql`select 1 from public.room_people where room_id = ${room}`).length) {
+        return { ok: false, perms: DEFAULT_PUBLIC, why: "This huddle is now private: ask a member for a personal link" };
+      }
       await sql`update public.mcp_links set last_used_at = now() where token_hash = ${await sha256(key)}`;
       return { ok: true, perms: { ...DEFAULT_PUBLIC, ...link.perms }, link };
     }
@@ -536,12 +545,18 @@ export function createMcp(opts: {
         if (!room) return Response.json({ error: "room required" }, { status: 400, headers: cors });
         if (!(await opts.canSee(String(room), req.headers.get("authorization")))) return Response.json({ error: "This huddle is private" }, { status: 403, headers: cors });
         const who = await caller(req);
+        // In a private huddle an AI link belongs to a person on its list, so removing them turns it off.
+        const [rv] = await sql`select visibility from public.rooms where id = ${String(room)}`;
+        if (rv?.visibility === "private" && !who.email && !who.service && who.uid == null) {
+          return Response.json({ error: "Sign in with your email to connect your AI to this private huddle." }, { status: 403, headers: cors });
+        }
         const key = `hk_${crypto.randomUUID().replace(/-/g, "")}`;
         const perDay = Math.round(Number(perms?.tasks_per_day));
         const p: Perms = { post: perms?.post !== false, work: perms?.work !== false, answer: !!perms?.answer,
           tasks: perms?.tasks !== false, tasks_per_day: perDay >= 1 && perDay <= 100 ? perDay : DEFAULT_PUBLIC.tasks_per_day };
-        await sql`insert into public.mcp_links (token_hash, room_id, label, perms, created_by)
-          values (${await sha256(key)}, ${room}, ${String(label ?? "").slice(0, 60) || null}, ${sql.json(p)}, ${who.uid})`;
+        await sql`insert into public.mcp_links (token_hash, room_id, label, perms, created_by, created_by_email)
+          values (${await sha256(key)}, ${room}, ${String(label ?? "").slice(0, 60) || null}, ${sql.json(p)}, ${who.uid},
+            ${who.email?.toLowerCase() ?? null})`;
         return Response.json({ url: `${SITE}/mcp?room=${encodeURIComponent(room)}&key=${key}`, key, perms: p }, { headers: cors });
       }
       if (req.method === "DELETE") {

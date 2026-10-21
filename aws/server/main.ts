@@ -10,7 +10,7 @@
 import postgres from "npm:postgres@3.4.5";
 import { serveDir } from "jsr:@std/http@1.0.12/file-server";
 import { clip, emitSpan, pipelineCtx, span, type Ctx } from "../../supabase/functions/_shared/trace.ts";
-import { caller } from "../../supabase/functions/_shared/auth.ts";
+import { caller, fileKeyOk } from "../../supabase/functions/_shared/auth.ts";
 import { handleAuth } from "./auth.ts";
 import { createMcp } from "./mcp.ts";
 import { redactPatterns } from "../../supabase/functions/_shared/secrets.ts";
@@ -173,6 +173,12 @@ async function storage(req: Request, path: string): Promise<Response> {
   let m = path.match(/^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
   if (m && (req.method === "GET" || req.method === "HEAD")) {
     const file = `${STORAGE}/${safePath(m[1])}/${safePath(m[2])}`;
+    // Files in a private room's folder are for its people only: the page and Huddle's own functions add the
+    // room's file key (?k=), which only people who can see the room are given.
+    const room = safePath(m[2]).split("/")[0];
+    if (m[1] === "board" && await isPrivate(room) && !(await fileKeyOk(room, new URL(req.url).searchParams.get("k")))) {
+      return new Response("This file is in a private huddle.", { status: 403 });
+    }
     try {
       const meta = JSON.parse(await Deno.readTextFile(`${file}.meta.json`).catch(() => "{}"));
       const f = await Deno.open(file);
@@ -184,6 +190,9 @@ async function storage(req: Request, path: string): Promise<Response> {
   m = path.match(/^\/storage\/v1\/object\/([^/]+)\/(.+)$/);
   if (m && (req.method === "POST" || req.method === "PUT")) {
     const key = `${safePath(m[1])}/${safePath(m[2])}`;
+    if (!(await canSee(safePath(m[2]).split("/")[0], req.headers.get("authorization")))) {
+      return Response.json({ error: "This huddle is private" }, { status: 403 });
+    }
     const file = `${STORAGE}/${key}`;
     await Deno.mkdir(file.slice(0, file.lastIndexOf("/")), { recursive: true });
     let bytes = new Uint8Array(await req.arrayBuffer());
@@ -220,9 +229,14 @@ async function canSee(room: string, authorization: string | null) {
   if (who.service) return true;
   const r = await sql`select visibility, owner_id from public.rooms where id = ${room}`;
   if (!r.length || r[0].visibility !== "private") return true;
+  if (who.guestRoom === room) return true;
+  if (who.email && (await sql`select 1 from public.room_people where room_id = ${room} and email = ${who.email.toLowerCase()}`).length) return true;
   if (!who.uid) return false;
   if (Number(r[0].owner_id) === who.uid) return true;
   return (await sql`select 1 from public.room_members where room_id = ${room} and user_id = ${who.uid}`).length > 0;
+}
+async function isPrivate(room: string) {
+  return (await sql`select 1 from public.rooms where id = ${room} and visibility = 'private'`).length > 0;
 }
 
 /** A room just went private: drop realtime subscribers who aren't allowed in any more. */
@@ -278,7 +292,8 @@ async function traced(name: string, req: Request, h: Handler): Promise<Response>
   }
   if (pid && !room) room = (await sql`select room_id from public.pipelines where id = ${pid}`)[0]?.room_id;
   if (name === "eval-run") room = "ci";
-  else if (room && !(await canSee(room, req.headers.get("authorization")))) {
+  // people checks access itself: outsiders must reach it to sign in and ask to join.
+  else if (name !== "people" && room && !(await canSee(room, req.headers.get("authorization")))) {
     return new Response(JSON.stringify({ error: "This huddle is private" }), { status: 403, headers: { "content-type": "application/json" } });
   }
   const ctx: Ctx = pid ? await pipelineCtx(pid, room) : { traceId: "", spanId: "", session: room };
