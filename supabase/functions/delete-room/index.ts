@@ -1,6 +1,6 @@
 // POST { room, confirm } -> deletes the huddle: its notes, board, work, AI links and uploaded files.
 // `confirm` must repeat the room id, so a stray call can't delete anything.
-// Who may delete: the owner of an owned room (private rooms always have one). A room nobody owns can be
+// Who may delete: the owner of an owned room (private rooms always have one: by email or GitHub). A room nobody owns can be
 // deleted by anyone who has its link, the same people who can rename it. The operator room never.
 // A GitHub repository the room published to is left alone; the response says where it is.
 import { cors, db, json } from "../_shared/util.ts";
@@ -45,7 +45,11 @@ Deno.serve(async (req) => {
     if (r.repo?.self) return json({ error: "The operator room can't be deleted." }, 403);
 
     const who = await caller(req);
-    if (!who.service && r.owner_id != null && Number(r.owner_id) !== who.uid) {
+    const { data: emailOwner } = await sb.from("room_people").select("email").eq("room_id", room).eq("role", "owner").maybeSingle();
+    const ownerMismatch = emailOwner
+      ? who.email?.toLowerCase() !== emailOwner.email
+      : r.owner_id != null && Number(r.owner_id) !== who.uid;
+    if (!who.service && ownerMismatch) {
       return json({ error: "Only the person who owns this huddle can delete it." }, 403);
     }
 

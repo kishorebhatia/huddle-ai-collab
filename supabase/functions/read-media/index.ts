@@ -1,6 +1,7 @@
 // POST { room, author, kind: 'voice'|'video'|'file', url, name?, mime?, size?, caption? }
 // -> Gemini listens to / watches / reads the upload and inserts one event the brief can use.
 import { background, cors, db, FAST_MODEL, geminiJson, json, toBase64 } from "../_shared/util.ts";
+import { withFileKey } from "../_shared/auth.ts";
 import { invokeFn } from "../_shared/pipeline.ts";
 
 // Inline uploads to Gemini are capped around 20 MB per request.
@@ -38,7 +39,7 @@ Deno.serve(async (req) => {
 
     let text = "";
     let readable = true;
-    const res = await fetch(url);
+    const res = await fetch(await withFileKey(url, String(room)));
     if (!res.ok) throw new Error(`could not fetch upload: ${res.status}`);
     const mime = (mimeIn || res.headers.get("content-type") || "application/octet-stream").split(";")[0];
     const buf = await res.arrayBuffer();

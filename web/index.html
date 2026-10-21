@@ -31,6 +31,10 @@
     <button class="vswitch donly" id="visSwitch" role="switch" aria-checked="false" aria-label="Private huddle" title="Public: anyone with the link can join">
       <span class="vside vpub">Public</span><span class="vtrack" aria-hidden="true"><span class="vknob"></span></span><span class="vside vpriv">Private</span>
     </button>
+    <button class="btn dk sm" id="peopleBtn" hidden title="Who can get into this private huddle">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      <span id="peopleLabel">Private</span><span class="pbadge" id="peopleBadge" hidden></span>
+    </button>
     <button class="btn dk sm donly" id="ghBtn" hidden title="Back this huddle with its own GitHub repository">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
       <span id="ghLabel">Sign in with GitHub</span>
@@ -343,6 +347,32 @@
       <input id="vFeedbackInput" class="inp" placeholder="Redo with… e.g. “compare three tools side by side”" />
       <button class="btn pri" id="vRevise">Make next version</button>
     </div>
+  </div>
+</div>
+
+<div class="ov" id="priv" hidden>
+  <div class="sheet" role="dialog" aria-label="Sign in to this huddle" style="padding:30px;max-width:460px">
+    <span class="mark" aria-hidden="true" style="margin-bottom:14px">h</span>
+    <div id="privBody"></div>
+  </div>
+</div>
+
+<div class="ov" id="makePriv" hidden>
+  <div class="sheet" role="dialog" aria-label="Make this huddle private">
+    <div class="sheet-head"><h2>Make this huddle private?</h2><button class="btn ghost sm" data-close="makePriv">Cancel</button></div>
+    <p class="muted" style="font-size:14px;margin:0">Only people you add can get in. Anyone here right now can stay until they leave.</p>
+    <label class="lab" for="mpEmails">Who should have access?</label>
+    <textarea id="mpEmails" class="inp" rows="3" placeholder="sam@example.com, priya@example.com"></textarea>
+    <label class="chk"><input type="checkbox" id="mpNotify" /> Email them an invite</label>
+    <p class="muted small" style="margin:6px 0 0">Next time they open the huddle, they sign in with their email. You can add people later too.</p>
+    <div class="crow" style="margin-top:18px"><button class="btn pri" id="mpGo">Make private</button></div>
+  </div>
+</div>
+
+<div class="ov" id="people" hidden>
+  <div class="sheet" role="dialog" aria-label="People in this huddle">
+    <div class="sheet-head"><h2>People</h2><button class="btn ghost sm" data-close="people">Close</button></div>
+    <div id="peopleBody"></div>
   </div>
 </div>
 
