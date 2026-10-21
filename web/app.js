@@ -1819,16 +1819,22 @@ $("upNotify").onclick = notifyMe;
 $("upEmailInput").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); notifyMe(); } });
 
 // ---------- invite + connect your AI ----------
+// Invite always copies the room's link. In a private huddle the owner also gets People, where people who open
+// the link ask to join (or can be added by email so they get straight in).
 $("shareBtn").onclick = async () => {
-  if (isPrivateRoom() && priv.status?.is_owner) return openPeople();
-  try {
-    await navigator.clipboard.writeText(location.href);
-    toast(state.room?.visibility === "private"
-      ? "Link copied. This huddle is private: only people the owner adds can get in."
-      : "Invite link copied. This huddle is public, so anyone with the link can join.");
-  } catch {
-    prompt("Copy this link", location.href);
+  const owner = isPrivateRoom() && priv.status?.is_owner;
+  let copied = true;
+  try { await navigator.clipboard.writeText(location.href); } catch { copied = false; }
+  if (owner) {
+    await openPeople();
+    if (!copied) prompt("Copy this link", location.href);
+    else toast("Link copied. When they open it, they'll confirm their email and ask to join. Let them in here, or add their email below so they get straight in.", 7000);
+    return;
   }
+  if (!copied) return prompt("Copy this link", location.href);
+  toast(isPrivateRoom()
+    ? "Link copied. This huddle is private: they'll confirm their email and ask the owner to let them in."
+    : "Invite link copied. This huddle is public, so anyone with the link can join.", isPrivateRoom() ? 6000 : 2800);
 };
 // Connect your AI: copy one prompt and go. It carries this person's own revocable link (made the first time
 // the panel opens, then reused) and tells their AI how to connect, catch up and take the room's tasks.
