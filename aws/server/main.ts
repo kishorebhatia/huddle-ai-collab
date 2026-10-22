@@ -256,12 +256,18 @@ async function canSee(room: string, authorization: string | null) {
   const who = await caller(new Request("http://local", { headers: { authorization: authorization ?? "" } }));
   if (who.service) return true;
   const r = await sql`select visibility, owner_id from public.rooms where id = ${room}`;
-  if (!r.length || r[0].visibility !== "private") return true;
+  // A room that doesn't exist is open only to people who may start huddles (anyone, unless ROOM_CREATORS is set).
+  if (!r.length) return await mayCreateRooms(who.email);
+  if (r[0].visibility !== "private") return true;
   if (who.guestRoom === room) return true;
   if (who.email && (await sql`select 1 from public.room_people where room_id = ${room} and email = ${who.email.toLowerCase()}`).length) return true;
   if (!who.uid) return false;
   if (Number(r[0].owner_id) === who.uid) return true;
   return (await sql`select 1 from public.room_members where room_id = ${room} and user_id = ${who.uid}`).length > 0;
+}
+async function mayCreateRooms(email?: string) {
+  const creators = await sql`select email from public.room_creators`.catch(() => []); // before the migration: anyone
+  return !creators.length || (!!email && creators.some((c) => c.email === email.toLowerCase()));
 }
 async function isPrivate(room: string) {
   return (await sql`select 1 from public.rooms where id = ${room} and visibility = 'private'`).length > 0;
@@ -467,6 +473,15 @@ try {
 // mark them failed now so the next sweep retries them within a minute, not after the stuck timeout.
 await sql`update public.jobs set status = 'failed', error = 'server restarted (deploy); retrying', updated_at = now() where status = 'running'`
   .catch((e) => console.warn("orphaned jobs", e.message));
+// Who may start huddles: ROOM_CREATORS (comma-separated emails) replaces the list; unset clears it (anyone).
+{
+  const creators = [...new Set(env("ROOM_CREATORS", "").split(",").map((e) => e.trim().toLowerCase()).filter((e) => e.includes("@")))];
+  await sql.begin(async (tx) => {
+    await tx`delete from public.room_creators`;
+    for (const email of creators) await tx`insert into public.room_creators (email) values (${email})`;
+  }).catch((e) => console.error("room creators (is the room_creators migration applied?)", e.message));
+  console.log(creators.length ? `only ${creators.length} listed ${creators.length === 1 ? "person" : "people"} can start huddles` : "anyone can start huddles");
+}
 await loadFunctions();
 await sql.listen("huddle_changes", (m) => onChange(m).catch((e) => console.error("change", e)));
 

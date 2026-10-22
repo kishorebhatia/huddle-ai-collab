@@ -131,6 +131,10 @@ export function createMcp(opts: {
     if (r?.visibility === "private" && !(await opts.canSee(room, req.headers.get("authorization")))) {
       return { ok: false, perms: DEFAULT_PUBLIC, why: "This huddle is private: connect with a link minted from inside the room" };
     }
+    // A made-up room id only opens a new room for people who may start huddles.
+    if (!r && !(await opts.canSee(room, req.headers.get("authorization")))) {
+      return { ok: false, perms: DEFAULT_PUBLIC, why: "This huddle doesn't exist" };
+    }
     return { ok: true, perms: KEYLESS };
   }
 

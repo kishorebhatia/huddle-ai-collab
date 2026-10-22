@@ -101,17 +101,26 @@ const store = {
 };
 const url = new URL(location.href);
 let room = url.searchParams.get("room");
-if (!room) {
+// May this person start huddles? Anyone, unless this is a personal server that lists its creators.
+// (null: couldn't tell; the server still refuses anyone it shouldn't.)
+async function startAccess() {
+  try { return (await sb.functions.invoke("people", { body: { action: "can_create" } })).data ?? null; } catch { return null; }
+}
+const access = await startAccess();
+// Opening Huddle without a room starts one, except for strangers on a personal server: they see a sign-in.
+const startGate = !room && access?.can_create === false ? access : null;
+if (!room && !startGate) {
   room = Math.random().toString(36).slice(2, 8);
   url.searchParams.set("room", room);
   history.replaceState(null, "", url);
 }
+room ??= "";
 const clientId = crypto.randomUUID();
 let me = store.get("huddle:name") || auth.user?.name || auth.user?.login || "";
 
 // Rooms you've been in live in this browser only (no accounts yet).
 const myRooms = store.json("huddle:rooms", []);
-if (!myRooms.find((r) => r.id === room)) myRooms.unshift({ id: room, name: "" });
+if (room && !myRooms.find((r) => r.id === room)) myRooms.unshift({ id: room, name: "" });
 store.set("huddle:rooms", JSON.stringify(myRooms.slice(0, 20)));
 // The current room's name is shared (rooms.name); other rooms fall back to what this browser remembers.
 const roomLabel = (id) => (id === room && state?.room?.name) || myRooms.find((r) => r.id === id)?.name || `Room ${id}`;
@@ -1261,6 +1270,8 @@ $("workRail").onclick = () => setFocus(false);
 // ROOMS: menu, new huddle, public / private
 // ==========================================================================
 function renderRoomMenu() {
+  // On a personal server, only its owner sees "Start a new huddle".
+  $("newRoomBtn").hidden = access?.can_create === false;
   const list = $("roomList");
   list.innerHTML = "";
   for (const r of myRooms) {
@@ -1518,6 +1529,37 @@ function openEmailSignIn({ title, text, after } = {}) {
 }
 
 // Outside a private huddle: sign in, or (signed in but not on the list) ask to join and wait.
+// A personal server where only its owner starts huddles: strangers who open Huddle without a room sign in,
+// and anyone not on the list is told where to go instead of getting a room (and the server's AI).
+function startHuddleGate(a) {
+  const body = $("privBody");
+  $("priv").hidden = false;
+  const visited = myRooms.slice(0, 5);
+  const links = visited.length ? h("div", { class: "plist", style: "margin-top:14px" }, h("p", { class: "lbl", style: "margin:0" }, "Huddles you've been in"),
+    ...visited.map((r) => h("a", { class: "ritem", href: `${location.pathname}?room=${encodeURIComponent(r.id)}` }, r.name || `Room ${r.id}`))) : null;
+  if (!a.signed_in && a.email_ready) {
+    openEmailSignIn({ title: "Sign in to start a huddle", text: "Only the owner of this Huddle can start new ones. Sign in with your email. We'll send you a 6-digit code." });
+    if (links) body.append(links);
+    return;
+  }
+  body.innerHTML = "";
+  body.append(h("h2", {}, "You can’t start a huddle here"),
+    h("p", { class: "muted", style: "font-size:14px;margin:0" }, a.signed_in
+      ? `You're signed in as ${a.email}. Only the owner of this Huddle can start new ones. If someone shared a huddle with you, open their link.`
+      : "Only the owner of this Huddle can start new ones. If someone shared a huddle with you, open their link."),
+    a.signed_in ? h("div", { class: "crow", style: "margin-top:14px" }, h("button", { class: "linkbtn", onclick: signOutEmail }, "Use a different email")) : null,
+    links);
+}
+// A made-up or deleted room link, for someone who can't start huddles here.
+function noSuchHuddle() {
+  forgetRoomLocally(room); // not a huddle you've been in
+  const body = $("privBody");
+  $("priv").hidden = false;
+  body.innerHTML = "";
+  body.append(h("h2", {}, "This huddle doesn’t exist"),
+    h("p", { class: "muted", style: "font-size:14px;margin:0" }, "It may have been deleted, or the link isn’t quite right. Ask whoever shared it for a new link."));
+}
+
 async function privateGate() {
   let st = null;
   try { st = await people("status"); } catch { /* shown below as not set up */ }
@@ -1525,6 +1567,7 @@ async function privateGate() {
   $("priv").hidden = false;
   const notice = ssGet("huddle:notice"); ssSet("huddle:notice", null);
   if (notice) toast(notice, 6000);
+  if (st?.exists === false) return noSuchHuddle();
   if (st && !st.email_ready && !session) {
     body.innerHTML = "";
     return body.append(h("h2", {}, "This huddle is private"), h("p", { class: "muted", style: "font-size:14px;margin:0" }, "Only people the owner invites can get in. Ask them to add you."));
@@ -2249,6 +2292,7 @@ function subscribe() {
 }
 
 async function start() {
+  if (startGate) return startHuddleGate(startGate);
   // A private huddle you aren't in: the room row is hidden from you (RLS), so say why.
   const { data: visible } = await sb.from("rooms").select("id").eq("id", room).maybeSingle();
   if (!visible && (await roomExists())) return auth.token && !session ? githubGate() : privateGate();

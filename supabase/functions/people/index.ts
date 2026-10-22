@@ -2,8 +2,9 @@
 //   request_code { email }                 email a 6-digit sign-in code (limited per email and per network)
 //   verify_code { email, code }            -> { token }: a 30-day Huddle sign-in for that email
 //   redeem_invite { invite }               the link in an invite email signs you in, no code needed
+//   can_create                             may this caller start new huddles (ROOM_CREATORS on a personal server)
 //   status { room }                        visibility, who you are here, a members-only file key; owners also get
-//                                          the people list and pending requests
+//                                          the people list and pending requests. { exists: false } for no such room
 //   prepare_private { room }               owner-to-be gets a short-lived "stay" pass to hand to people in the room
 //   stay { stay }                          -> { token }: a guest pass for this room until the tab closes
 //   make_private { room, emails, notify }  the caller becomes owner; only listed people (and guests) can get in
@@ -118,11 +119,21 @@ Deno.serve(async (req) => {
       return json({ token: await signJwt({ role: "authenticated", guest_room: c.room, ...(me ? { email: me } : {}) }, 12 * 3600) });
     }
 
+    // Who may start huddles: anyone, unless this server lists its creators (ROOM_CREATORS).
+    const { data: creators } = await sb.from("room_creators").select("email");
+    const locked = !!creators?.length;
+    const canCreate = !locked || (!!me && creators!.some((c: Any) => c.email === me));
+    if (action === "can_create") return json({ locked, can_create: canCreate, signed_in: !!me, email: me, email_ready: mailConfigured() });
+
     // ---------- everything below is about one room ----------
     const roomId = String(body.room ?? "");
     if (!/^[\w-]{1,64}$/.test(roomId)) return json({ error: "room required" }, 400);
     const { data: room } = await sb.from("rooms").select("id, name, visibility, owner_id, repo").eq("id", roomId).maybeSingle();
-    if (!room) return json({ error: "This huddle doesn't exist." }, 404);
+    if (!room) {
+      return action === "status"
+        ? json({ exists: false, can_create: canCreate, signed_in: !!me, email_ready: mailConfigured() })
+        : json({ error: "This huddle doesn't exist." }, 404);
+    }
     const { data: people } = await sb.from("room_people").select("email, role, name, added_at, joined_at").eq("room_id", roomId).order("added_at");
     const owner = (people ?? []).find((p: Any) => p.role === "owner")?.email ?? null;
     const mine = me ? (people ?? []).find((p: Any) => p.email === me) : null;
