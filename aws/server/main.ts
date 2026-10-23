@@ -404,8 +404,10 @@ async function handle(req: Request): Promise<Response> {
   // The app files change together on every update, so browsers (and any cache in front, like Cloudflare)
   // must check back each load. serveDir's ETag keeps that cheap: an unchanged file comes back as a 304.
   const res = await serveDir(req, { fsRoot: `${ROOT}web`, quiet: true });
-  res.headers.set("cache-control", "no-cache");
-  return res;
+  // Some responses (e.g. redirects) come with headers that can't be changed: copy them into a new one.
+  const headers = new Headers(res.headers);
+  headers.set("cache-control", "no-cache");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
 // Keys an admin added from the operator room (e.g. a new model provider) join the server's environment
