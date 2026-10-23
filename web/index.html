@@ -337,10 +337,12 @@
   <div class="sheet wide">
     <div class="sheet-head">
       <div style="flex:1;min-width:0"><span class="kb" id="vKind"></span><h2 id="vTitle" style="margin-top:6px"></h2></div>
+      <select class="inp vver" id="vVersion" aria-label="Version" hidden></select>
       <button class="btn ghost sm" id="vPin">Put on the board</button>
-      <button class="btn ghost sm" id="vOpen" hidden>Open in new tab</button>
+      <button class="btn ghost sm" id="vOpen" hidden>Full screen</button>
       <button class="btn ghost sm" id="vClose">Close</button>
     </div>
+    <div class="vtabs" id="vTabs" role="tablist" aria-label="Pages" hidden></div>
     <div id="vBody"></div>
     <div class="askrow" id="vFeedback" style="margin-top:18px">
       <label for="vFeedbackInput" class="sr">Feedback for the agent</label>

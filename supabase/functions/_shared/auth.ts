@@ -74,11 +74,15 @@ export async function fileKeyOk(room: string, k: string | null) {
  *  Only for a file in `room` itself, so one room can never be used to read another's files. */
 export async function withFileKey(url: string, room: string) {
   // Only for this Huddle's own storage: never hand a room's key to another server.
-  const own = [Deno.env.get("PUBLIC_SITE_URL"), Deno.env.get("SUPABASE_URL")].filter(Boolean).map((u) => u!.replace(/\/$/, "") + "/storage/");
+  const site = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
+  const inner = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
+  const own = [site, inner].filter(Boolean).map((u) => u + "/storage/");
   if (!own.some((o) => url.startsWith(o))) return url;
   const m = url.match(/\/storage\/v1\/object\/public\/board\/([^/?#]+)\//);
   if (!m || decodeURIComponent(m[1]) !== room || /[?&]k=/.test(url)) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}k=${await fileKey(room)}`;
+  // Read our own files over the internal address, not back out through the public site.
+  const local = site && inner && url.startsWith(`${site}/storage/`) ? inner + url.slice(site.length) : url;
+  return `${local}${local.includes("?") ? "&" : "?"}k=${await fileKey(room)}`;
 }
 
 // AES-GCM for GitHub tokens at rest; the key is derived from the JWT secret.
