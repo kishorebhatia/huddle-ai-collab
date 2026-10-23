@@ -6,7 +6,7 @@
 // POST { room, action: "stop_all" | "resume" }      -> kill switch for a room
 // POST { sweep: true }                              -> unstick stalled pipelines and jobs
 import { cors, db, json } from "../_shared/util.ts";
-import { forMembers, getRoom, handoffMinutes, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
+import { buildStages, forMembers, getRoom, handoffMinutes, invokeFn, postEvent, stagesFor, type Room } from "../_shared/pipeline.ts";
 import { planGoal, type Plan } from "../_shared/plan.ts";
 import { secretNames, serverKeysMissing } from "../_shared/vault.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -342,7 +342,7 @@ async function act(sb: SupabaseClient, pid: number, action: string, answer?: str
   if (gate.kind === "question" && answer && !stages.includes("prototype")) {
     const plan = await planGoal(p.goal, `TEAM ANSWERS:\n${meta.answers.map((a: any) => `- ${a.q} → ${a.a}`).join("\n")}`).catch(() => null);
     if (plan?.deliverable === "app") {
-      stages = [...stages, "prototype", "review", "host"];
+      stages = [...stages, ...buildStages()];
       meta.plan = plan;
       await postEvent(sb, p.room_id, `"${p.title}" will now also be built: ${stages.join(" → ")}`, { pipeline_id: pid });
     }

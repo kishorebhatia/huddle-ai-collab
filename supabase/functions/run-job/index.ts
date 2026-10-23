@@ -24,6 +24,17 @@ function extractFiles(text: string): Record<string, string> {
   }
   return files;
 }
+/** Builds with their own server (the app builder's output) vs pages that run in the browser. */
+const isServerApp = (files: Record<string, string>) => "server.js" in files;
+
+/** A plain start page linking to each page, for a multi-page build that forgot its index.html. */
+function startPage(files: Record<string, string>) {
+  const links = Object.keys(files).filter((p) => p.endsWith(".html"))
+    .map((p) => `<li><a href="${p}">${p.replace(/\.html$/, "").replace(/[-_]/g, " ")}</a></li>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<style>body{font:16px system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px}</style></head>` +
+    `<body><h1>Pages</h1><ul>${links}</ul></body></html>`;
+}
 const filesBlock = (files: Record<string, string>) =>
   Object.entries(files).map(([p, c]) => `\`\`\`file:${p}\n${c}\n\`\`\``).join("\n\n");
 
@@ -172,7 +183,9 @@ async function smoke(sb: SupabaseClient, job: any, url: string, goal: string, su
 async function hostOnDaytona(sb: SupabaseClient, job: any, proto: any, goal: string) {
   let html: string = proto.output_html;
   const summary: string = proto.output_md ?? "";
-  const sandbox: Sandbox = await deploySite({ "index.html": html }, { room: String(job.room_id).slice(0, 60), pipeline: String(job.pipeline_id ?? "") });
+  // A multi-page build (pages, no server) is a static site too: host all of its pages.
+  const site = proto.files && !isServerApp(proto.files) ? { ...proto.files, "index.html": html } : { "index.html": html };
+  const sandbox: Sandbox = await deploySite(site, { room: String(job.room_id).slice(0, 60), pipeline: String(job.pipeline_id ?? "") });
   await setMeta(sb, job.id, { sandbox_id: sandbox.id, sandbox_url: sandbox.url });
   for (let attempt = 0; ; attempt++) {
     const check = await checkScripts(sandbox, html);
@@ -523,15 +536,19 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
         contents: [{ role: "user", parts: [{ text: userText }] }],
         generationConfig: { thinkingConfig: { thinkingLevel: Deno.env.get("PROTOTYPE_THINKING") ?? "low" } },
       }, SMART_MODEL);
-      const html = extractHtml(text);
+      // One page (an html block) or several linked pages (file:<path> blocks, starting with index.html).
+      const pages = extractFiles(text);
+      const multi = Object.keys(pages).length > 1 || (Object.keys(pages).length === 1 && !pages["index.html"]);
+      if (multi && !pages["index.html"]) pages["index.html"] = startPage(pages);
+      const html = multi ? pages["index.html"] : pages["index.html"] ?? extractHtml(text);
       if (!html) throw new Error("model returned no HTML");
       const summary = text.match(/SUMMARY:\s*(.+)/i)?.[1]?.trim() ?? "";
-      await sb.from("jobs").update({ status: "done", output_html: html, output_md: summary, updated_at: now() }).eq("id", jobId);
+      await sb.from("jobs").update({ status: "done", output_html: html, ...(multi ? { files: pages } : {}), output_md: summary, updated_at: now() }).eq("id", jobId);
     } else if (job.kind === "review") {
       const target = ctx.previous;
       if (!target) throw new Error("nothing to review");
       const work = target.kind === "prototype" && target.files
-        ? `APP UNDER REVIEW (all files):\n${filesBlock(target.files).slice(0, 80000)}`
+        ? `${isServerApp(target.files) ? "APP" : "BUILD"} UNDER REVIEW (all files):\n${filesBlock(target.files).slice(0, 80000)}`
         : target.kind === "prototype"
         ? `PROTOTYPE UNDER REVIEW (HTML):\n\`\`\`html\n${(target.output_html ?? "").slice(0, 60000)}\n\`\`\``
         : `RESEARCH UNDER REVIEW:\n${target.output_md ?? ""}\nSOURCES: ${(target.sources ?? []).length}`;
@@ -568,7 +585,7 @@ async function runJob(sb: SupabaseClient, job: any, s: { set: (a: Record<string,
       let note = "";
       const mode = Deno.env.get("HOST_MODE") ?? (daytonaOn() ? "daytona" : "");
       if (mode === "daytona") {
-        const d = proto.files
+        const d = proto.files && isServerApp(proto.files)
           ? await hostAppOnDaytona(sb, job, proto, pipe?.goal ?? job.prompt, plan)
           : await hostOnDaytona(sb, job, proto, pipe?.goal ?? job.prompt);
         url = d.url;

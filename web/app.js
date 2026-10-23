@@ -363,7 +363,7 @@ function renderBrain() {
       f.srcdoc = j.output_html;
       card.append(f);
     }
-    card.append(h("span", { class: `kb ${j.kind}` }, j.kind === "prototype" ? "Prototype" : "Research"),
+    card.append(h("span", { class: `kb ${j.kind}` }, j.kind === "prototype" ? "Build" : "Research"),
       h("b", {}, j.title), h("small", {}, clip(plain(j.output_md), 120)));
     gal.append(card);
   }
@@ -579,7 +579,7 @@ function cardBody(item) {
   if (item.kind === "output") {
     const j = state.jobs.get(Number(item.data?.job_id));
     if (!j) return [h("small", {}, "Agent output")];
-    return [h("span", { class: `kb ${j.kind}` }, j.kind === "prototype" ? "Prototype" : "Research"), h("b", {}, j.title),
+    return [h("span", { class: `kb ${j.kind}` }, j.kind === "prototype" ? "Build" : "Research"), h("b", {}, j.title),
       h("small", {}, clip(plain(j.output_md), 140)), h("button", { class: "link", onclick: () => openViewer(j.id) }, "Open")];
   }
   const e = state.events.get(Number(item.data?.event_id));
@@ -1017,25 +1017,70 @@ $("askBtn").onclick = ask;
 $("jobPrompt").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); ask(); } });
 
 // ---------- output viewer ----------
+// A build opens like an artifact: its pages as tabs, every version a pick away, full screen in its own tab.
 let viewing = null;
 let blobUrl = null;
+let viewPage = "index.html";
+// Where Huddle serves a build's pages (sandboxed by the browser; links between pages work).
+const buildBase = (id) => (state.fileKey ? `${SUPABASE_URL}/p/${id}/${state.fileKey}/` : null);
+// A build's pages: several when it made more than one, else just its start page.
+function buildPages(j) {
+  const files = j.files || {};
+  const root = "server.js" in files ? "public/" : "";
+  const pages = Object.keys(files).filter((p) => p.startsWith(root) && /\.html?$/i.test(p)).map((p) => p.slice(root.length));
+  return pages.length ? ["index.html", ...pages.filter((p) => p !== "index.html").sort()] : ["index.html"];
+}
+const pageLabel = (p) => p === "index.html" ? "Start" : p.replace(/\.html?$/i, "").replace(/[-_]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+// Every finished version of the same build: its revisions (parent links) and the same pipeline's builds.
+function buildVersions(j) {
+  const rootOf = (x) => { let r = x; for (let i = 0; r?.parent_id && i < 20; i++) r = state.jobs.get(r.parent_id) ?? r; return r; };
+  const root = rootOf(j);
+  return [...state.jobs.values()].filter((x) => x.kind === "prototype" && x.status === "done" && x.output_html &&
+    (rootOf(x).id === root.id || (j.pipeline_id && x.pipeline_id === j.pipeline_id))).sort((a, b) => a.id - b.id);
+}
+function showBuildPage(j, page) {
+  viewPage = page;
+  const base = buildBase(j.id);
+  const frame = h("iframe", { class: "proto", sandbox: "allow-scripts allow-forms allow-modals allow-popups", title: `${j.title}: ${pageLabel(page)}` });
+  if (base) frame.src = base + page;
+  else frame.srcdoc = j.output_html || ""; // the room's key isn't known yet: show the start page directly
+  const old = $("vBody").querySelector("iframe.proto");
+  if (old) old.replaceWith(frame);
+  else $("vBody").prepend(frame);
+  for (const b of $("vTabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === page);
+}
 function openViewer(id) {
   const j = state.jobs.get(id);
   if (!j) return;
   viewing = id;
-  $("vKind").textContent = j.kind === "prototype" ? "Prototype" : "Research";
+  $("vKind").textContent = j.kind === "prototype" ? "Build" : "Research";
   $("vKind").className = `kb ${j.kind}`;
   $("vTitle").textContent = j.title;
   const body = $("vBody");
   body.innerHTML = "";
   if (blobUrl) URL.revokeObjectURL(blobUrl);
   blobUrl = null;
+  $("vTabs").innerHTML = "";
+  $("vTabs").hidden = true;
+  $("vVersion").hidden = true;
   if (j.kind === "prototype") {
-    const frame = h("iframe", { class: "proto", sandbox: "allow-scripts allow-forms allow-modals", title: j.title });
-    frame.srcdoc = j.output_html || "";
-    body.append(frame);
+    const pages = buildPages(j);
+    if (pages.length > 1 && buildBase(j.id)) {
+      $("vTabs").append(...pages.map((p) => h("button", { role: "tab", "data-page": p, onclick: () => showBuildPage(j, p) }, pageLabel(p))));
+      $("vTabs").hidden = false;
+    }
+    showBuildPage(j, "index.html");
     if (j.output_md) body.append(h("p", { class: "muted small" }, j.output_md));
-    blobUrl = URL.createObjectURL(new Blob([j.output_html || ""], { type: "text/html" }));
+    const versions = buildVersions(j);
+    if (versions.length > 1) {
+      const sel = $("vVersion");
+      sel.innerHTML = "";
+      versions.forEach((v, i) => sel.append(h("option", { value: v.id, selected: v.id === j.id },
+        `Version ${i + 1}${i === versions.length - 1 ? " (latest)" : ""}`)));
+      sel.onchange = () => openViewer(Number(sel.value));
+      sel.hidden = false;
+    }
+    if (!buildBase(j.id)) blobUrl = URL.createObjectURL(new Blob([j.output_html || ""], { type: "text/html" }));
     $("vOpen").hidden = false;
   } else {
     body.append(h("article", { class: "prose", html: md(j.output_md) }));
@@ -1048,7 +1093,12 @@ function openViewer(id) {
   $("vFeedback").hidden = !["research", "prototype"].includes(j.kind);
   $("viewer").hidden = false;
 }
-$("vOpen").onclick = () => blobUrl && window.open(blobUrl, "_blank");
+// Full screen: the page in its own tab, still sandboxed (the server says so with every page).
+$("vOpen").onclick = () => {
+  const base = viewing && buildBase(viewing);
+  if (base) window.open(base + viewPage, "_blank", "noopener");
+  else if (blobUrl) window.open(blobUrl, "_blank");
+};
 $("vPin").onclick = async () => {
   if (!viewing) return;
   if (boardItems().some((b) => b.kind === "output" && Number(b.data?.job_id) === viewing)) { toast("It's already on the board."); }
