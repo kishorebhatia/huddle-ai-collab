@@ -62,5 +62,19 @@
   "keys": [
    "OPENWEATHER"
   ]
+ },
+ {
+  "id": "party-agenda-slides",
+  "goal": "Make our holiday party agenda and a short welcome slideshow from what we decided.",
+  "deliverable": "app",
+  "backend": false,
+  "keys": []
+ },
+ {
+  "id": "prep-checklist",
+  "goal": "Put together a prep checklist with owners for the offsite.",
+  "deliverable": "app",
+  "backend": false,
+  "keys": []
  }
 ]
