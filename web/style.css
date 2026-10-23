@@ -319,7 +319,11 @@ pre { background: var(--chip); border-radius: 10px; padding: 12px; font-family: 
 .share { display: flex; flex-direction: column; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 6px; font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer; min-height: 84px; }
 .share:hover { border-color: var(--sage); background: #F7F9F2; }
 .share .si { width: 38px; height: 38px; border-radius: 12px; background: var(--soft); color: var(--green); display: grid; place-items: center; }
-#vBody iframe.proto { width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+#vBody iframe.proto { width: 100%; height: 68vh; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.vtabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 10px; }
+.vtabs button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.vtabs button.on { background: var(--green); border-color: var(--green); color: #fff; }
+.inp.vver { flex: none; min-height: 32px; font-size: 12.5px; max-width: 220px; }
 .prose { font-size: 14.5px; line-height: 1.6; }
 .prose h1, .prose h2, .prose h3 { font-family: Manrope, sans-serif; letter-spacing: -0.01em; }
 .prose h1 { font-size: 20px; } .prose h2 { font-size: 17px; } .prose h3 { font-size: 15px; }

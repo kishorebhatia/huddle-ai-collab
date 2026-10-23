@@ -250,6 +250,37 @@ async function linkPreview(room: string | null) {
   ].join("\n  ");
 }
 
+// ---------- builds: a room's web deliverables, viewed in the room ----------
+// /p/<build id>/<room key>/<page>: the pages of one build, served so links between them work. The room key
+// (people.status gives it to people who can see the room) keeps builds from being opened by guessing ids.
+// Every page is sandboxed by the browser (CSP sandbox): an opaque origin with no access to Huddle's or
+// Computer's cookies, storage or sign-in, even if opened on its own in a tab.
+const BUILD_TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8", css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", json: "application/json",
+  svg: "image/svg+xml", txt: "text/plain; charset=utf-8", md: "text/plain; charset=utf-8", csv: "text/csv; charset=utf-8",
+};
+const BUILD_HEADERS = {
+  "content-security-policy": "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads",
+  "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "cache-control": "no-store",
+};
+async function serveBuild(path: string): Promise<Response> {
+  const notFound = () => new Response("This build isn't available.", { status: 404, headers: BUILD_HEADERS });
+  const m = path.match(/^\/p\/(\d{1,12})\/([\w-]{1,64})(?:\/(.*))?$/);
+  if (!m) return notFound();
+  const [job] = await sql`select room_id, kind, output_html, files from public.jobs where id = ${Number(m[1])}`;
+  if (!job || job.kind !== "prototype" || !job.output_html) return notFound();
+  if (!(await fileKeyOk(String(job.room_id), m[2]))) return new Response("Open this from its huddle.", { status: 403, headers: BUILD_HEADERS });
+  const files = (job.files ?? {}) as Record<string, string>;
+  // An app with its own server keeps its pages under public/; a multi-page build keeps them at the top.
+  const root = "server.js" in files ? "public/" : "";
+  const page = safePath(m[3] || "") || "index.html";
+  const body = page === "index.html" ? files[`${root}index.html`] ?? job.output_html : files[`${root}${page}`];
+  if (body == null) return notFound();
+  const type = BUILD_TYPES[page.split(".").pop()!.toLowerCase()] ?? "text/plain; charset=utf-8";
+  return new Response(body, { headers: { ...BUILD_HEADERS, "content-type": type } });
+}
+
 // ---------- private rooms ----------
 // RLS guards REST reads; these guard what RLS can't see: function calls and realtime fan-out.
 async function canSee(room: string, authorization: string | null) {
@@ -408,6 +439,7 @@ async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS" && !p.startsWith("/functions/")) return new Response(null, { headers: CORS });
   if (p.startsWith("/rest/v1")) return proxyRest(req, url);
   if (p.startsWith("/storage/v1/")) return storage(req, p);
+  if (p.startsWith("/p/") && (req.method === "GET" || req.method === "HEAD")) return await serveBuild(p);
   if (p === "/mcp" || p === "/mcp/links") return await handleMcp(req, url);
   if (p.startsWith("/auth/")) {
     const res = await handleAuth(req, url, sql);
@@ -455,8 +487,10 @@ async function handle(req: Request): Promise<Response> {
   // The app files change together on every update, so browsers (and any cache in front, like Cloudflare)
   // must check back each load. serveDir's ETag keeps that cheap: an unchanged file comes back as a 304.
   const res = await serveDir(req, { fsRoot: `${ROOT}web`, quiet: true });
-  res.headers.set("cache-control", "no-cache");
-  return res;
+  // Some responses (e.g. redirects) come with headers that can't be changed: copy them into a new one.
+  const headers = new Headers(res.headers);
+  headers.set("cache-control", "no-cache");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
 // Keys an admin added from the operator room (e.g. a new model provider) join the server's environment

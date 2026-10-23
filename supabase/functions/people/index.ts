@@ -167,7 +167,8 @@ Deno.serve(async (req) => {
       const out: Any = {
         visibility: room.visibility, can_see: true, is_owner: isOwner, has_owner: !!owner, signed_in: !!me,
         me: me ? { email: me, member: !!mine, role: mine?.role ?? null } : null,
-        guest: who.guestRoom === roomId, file_key: priv ? await fileKey(roomId) : null, email_ready: mailConfigured(),
+        // The room's key opens its builds (all rooms) and its uploaded files (private rooms).
+        guest: who.guestRoom === roomId, file_key: await fileKey(roomId), email_ready: mailConfigured(),
       };
       if (isOwner) {
         const { data: links } = await sb.from("mcp_links").select("id, label, created_by_email, created_at, last_used_at")

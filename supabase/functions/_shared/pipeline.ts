@@ -1,11 +1,17 @@
 // Shared helpers for autonomous pipelines.
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
+// Builds are viewed in the room. They're published to a public host (the publish question, then "host") only
+// where public hosting is set up: Daytona or Vercel, or PUBLISH_BUILDS=1 for the share page on this site.
+export const publishesBuilds = () =>
+  (Deno.env.get("PUBLISH_BUILDS") ?? (Deno.env.get("HOST_MODE") || Deno.env.get("DAYTONA_API_KEY") ? "1" : "0")) === "1";
+export const buildStages = () => publishesBuilds() ? ["prototype", "review", "host"] : ["prototype", "review"];
+
 // Every pipeline starts with a plan; the plan rewrites the stages that follow (see orchestrate).
 export const STAGE_SETS: Record<string, string[]> = {
   research: ["plan", "research", "review"],
-  build: ["plan", "research", "review", "prototype", "review", "host"],
-  prototype: ["plan", "prototype", "review", "host"],
+  get build() { return ["plan", "research", "review", ...buildStages()]; },
+  get prototype() { return ["plan", ...buildStages()]; },
   // The operator room: change Huddle's own prompts, review the change, open a pull request.
   // Operator room: triage first (a change to Huddle, or not?), then change any file, review, PR, ship.
   improve: ["triage", "change", "review", "pr", "ship"],
@@ -17,7 +23,7 @@ export const OPERATOR_ROOM = Deno.env.get("OPERATOR_ROOM") ?? "huddle-operator";
 /** The stages a plan calls for. */
 export function stagesFor(plan: { deliverable?: string; needs_research?: boolean }): string[] {
   const research = plan.deliverable !== "app" || plan.needs_research ? ["research", "review"] : [];
-  return ["plan", ...research, ...(plan.deliverable === "app" ? ["prototype", "review", "host"] : [])];
+  return ["plan", ...research, ...(plan.deliverable === "app" ? buildStages() : [])];
 }
 
 export type Room = {

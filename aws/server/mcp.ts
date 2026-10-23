@@ -22,6 +22,16 @@ type Any = any;
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SITE = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const STORAGE_DIR = Deno.env.get("STORAGE_DIR") ?? "/data/storage";
+const MAX_SHARE_BYTES = 20 * 1024 * 1024;
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: "application/pdf", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key: "application/x-iwork-keynote-sffkey",
+  csv: "text/csv", md: "text/markdown", txt: "text/plain", html: "text/html", json: "application/json",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+  mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav",
+};
 const DEFAULT_PUBLIC: Perms = { post: true, work: true, answer: false, tasks: true, tasks_per_day: 10 };
 // A connection without a personal link is identified only by a session id the client picks, so it can't
 // take tasks: the daily limit and "never review your own work" both key on a stable identity.
@@ -60,19 +70,27 @@ const TOOLS = [
     props: { pipeline_id: { type: "integer" }, action: { type: "string", enum: ["approve", "skip", "answer"] }, answer: { type: "string" } },
     required: ["pipeline_id", "action"], perm: "answer" },
   { name: "add_to_board", description: "Pin a note card to the room's shared board.", props: { text: { type: "string" } }, required: ["text"], perm: "post" },
+  { name: "share_file", description: "Share a file into the room, like a teammate's upload: a slideshow, PDF, document, spreadsheet, image or video you made. Everyone in the room can open it, and Huddle reads it into the brief. Send text files (csv, md, txt, html…) as text, anything else as base64. Up to 20 MB.",
+    props: {
+      name: { type: "string", description: "file name with its extension, e.g. party-slides.pptx" },
+      text: { type: "string", description: "the content of a text file" },
+      content_base64: { type: "string", description: "the content of any other file, base64-encoded" },
+      mime_type: { type: "string", description: "optional, e.g. application/pdf; worked out from the name if left out" },
+      caption: { type: "string", description: "optional: one line on what it is" },
+    }, required: ["name"], perm: "post" },
   { name: "catch_up", description: "What changed since your last visit: new stream items, questions waiting on the room, and open tasks you could take. Start every visit here.",
     props: { since_id: { type: "integer", description: "optional; defaults to where this link last read" } } },
   { name: "next_task", description: "Open tasks in this room that your AI can take: research, building a prototype, or reviewing someone else's work. Doesn't claim anything.", props: {} },
   { name: "claim_task", description: `Take an open task (the first one available if you omit task_id). Returns the instructions, the room's context and the inputs, and holds the task for you for ${LEASE_MIN} min. Calling it again on your task renews the hold.`,
     props: { task_id: { type: "integer" } }, perm: "tasks" },
-  { name: "submit_work", description: "Hand back the result of a task you claimed. Research: report (markdown) + sources. Prototype: html (one self-contained page), or files when the task asks for an app. Review: verdict, score and issues. Huddle then reviews, publishes and posts it like its own work.",
+  { name: "submit_work", description: "Hand back the result of a task you claimed. Research: report (markdown) + sources. Build: html (one page), or files (several linked pages, or an app when the task asks for one). Review: verdict, score and issues. Huddle then reviews it and shows it in the room like its own work.",
     props: {
       task_id: { type: "integer" },
       report: { type: "string", description: "research: the brief, in markdown" },
       sources: { type: "array", items: { type: "object", properties: { title: { type: "string" }, url: { type: "string" } }, required: ["url"] } },
-      html: { type: "string", description: "prototype: one complete HTML page" },
-      files: { type: "object", description: "app prototype: {path: content}, with server.js and public/index.html", additionalProperties: { type: "string" } },
-      summary: { type: "string", description: "prototype: one line on what it does" },
+      html: { type: "string", description: "build: one complete HTML page" },
+      files: { type: "object", description: "build: {path: content}. Several pages: index.html plus the others, relative links. An app: server.js and public/index.html", additionalProperties: { type: "string" } },
+      summary: { type: "string", description: "build: one line on what you made" },
       verdict: { type: "string", enum: ["pass", "revise"] },
       score: { type: "integer", description: "review: 1-10" },
       strengths: { type: "array", items: { type: "string" } },
@@ -107,6 +125,35 @@ export function createMcp(opts: {
       method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${SERVICE}` }, body: JSON.stringify(body),
     }));
     return await res.json();
+  }
+
+  /** A connected AI shares a file: stored like a teammate's upload, then read into the room the same way. */
+  async function shareFile(room: string, author: string, args: Any): Promise<Any> {
+    const name = String(args.name ?? "").trim().replace(/[^\w.\-]+/g, "_").slice(-80);
+    if (!name || !name.includes(".")) return { error: "Give the file a name with its extension, e.g. party-slides.pptx." };
+    let bytes: Uint8Array;
+    if (typeof args.text === "string") bytes = new TextEncoder().encode(args.text);
+    else if (typeof args.content_base64 === "string") {
+      try { bytes = Uint8Array.from(atob(args.content_base64.replace(/^data:[^,]*,/, "").replace(/\s+/g, "")), (c) => c.charCodeAt(0)); }
+      catch { return { error: "content_base64 isn't valid base64." }; }
+    } else return { error: "Send the file as text or content_base64." };
+    if (!bytes.length) return { error: "That file is empty." };
+    if (bytes.length > MAX_SHARE_BYTES) return { error: "That file is over 20 MB." };
+    const ext = name.split(".").pop()!.toLowerCase();
+    const mime = /^[\w.+-]+\/[\w.+-]+$/.test(String(args.mime_type ?? "")) ? String(args.mime_type) : MIME_BY_EXT[ext] ?? "application/octet-stream";
+    const kind = mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "voice" : "file";
+    const path = `${room}/${kind === "image" ? "images" : `${kind}s`}/${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${name}`;
+    const file = `${STORAGE_DIR}/board/${path}`;
+    await Deno.mkdir(file.slice(0, file.lastIndexOf("/")), { recursive: true });
+    await Deno.writeFile(file, bytes);
+    await Deno.writeTextFile(`${file}.meta.json`, JSON.stringify({ contentType: mime }));
+    const url = `${SITE}/storage/v1/object/public/board/${path}`;
+    const caption = String(args.caption ?? "").slice(0, 400);
+    const r = kind === "image"
+      ? await fn("see", { room, author, image_url: url, caption })
+      : await fn("read-media", { room, author, kind, url, name, mime, size: bytes.length, caption });
+    if (r?.error) return { error: `Saved the file, but Huddle couldn't add it to the room: ${r.error}` };
+    return { shared: true, name, kind, event_id: r?.event?.id ?? null };
   }
 
   /** What this connection may do in `room`. */
@@ -235,8 +282,10 @@ export function createMcp(opts: {
         ? `Build a small working app. Call submit_work with files: server.js (Node, no build step) and public/index.html. ` +
           `It reads these secrets from process.env: ${(plan.required_inputs ?? []).map((i: Any) => i.name).join(", ") || "none"}; never put keys in the files. ` +
           `Done when: ${plan.done_when}. Add summary: one line on what it does.`
-        : "Build one self-contained HTML page (inline CSS and JS, no build step) that does what the goal asks, grounded in the research. " +
-          "Call submit_work with html and summary (one line on what it does).",
+        : "Make what the goal asks as a web deliverable (a tool or prototype, or a document such as an agenda, slideshow, " +
+          "checklist or plan), using the team's real decisions and the research. Plain HTML/CSS/JS, no build step. " +
+          "Call submit_work with html (one page) or files ({\"index.html\": …, \"slides.html\": …} for several linked pages, " +
+          "relative links), and summary (one line on what you made).",
       review: "Review ONLY inputs.work_to_review against the goal and the research. Call submit_work with verdict (pass or revise), " +
         "score (1-10), strengths, issues, and revision_instructions when you say revise. Ask question_for_team only if a decision truly needs the team.",
     };
@@ -305,9 +354,22 @@ export function createMcp(opts: {
         }
         if (!files["server.js"] || !files["public/index.html"]) return { ...text("This task is an app: send files with server.js and public/index.html."), isError: true };
         Object.assign(patch, { files, output_html: files["public/index.html"], output_md: summary });
+      } else if (args.files && typeof args.files === "object" && Object.keys(args.files).length) {
+        // Several linked pages (no server): kept as files, viewed together in the room.
+        const files: Record<string, string> = {};
+        let total = 0;
+        for (const [k, v] of Object.entries(args.files)) {
+          const path = String(k).replace(/^\/+/, "").replace(/\.\.\//g, "");
+          if (!path || /(^|\/)\.env/.test(path) || path === "server.js") continue;
+          files[path] = String(v);
+          total += files[path].length;
+        }
+        if (!/<html|<!doctype html/i.test(files["index.html"] ?? "")) return { ...text("Send files with an index.html start page."), isError: true };
+        if (total > 2_000_000) return { ...text("That build is too large: keep all pages under 2 MB."), isError: true };
+        Object.assign(patch, { files, output_html: files["index.html"], output_md: summary });
       } else {
         const html = String(args.html ?? "").trim();
-        if (!/<html|<!doctype html/i.test(html)) return { ...text("Send html: one complete HTML page (<!doctype html>…)."), isError: true };
+        if (!/<html|<!doctype html/i.test(html)) return { ...text("Send html: one complete HTML page (<!doctype html>…), or files for several pages."), isError: true };
         Object.assign(patch, { output_html: html.slice(0, 400000), output_md: summary });
       }
       md = summary;
@@ -371,6 +433,10 @@ export function createMcp(opts: {
         const kind = ["finding", "note", "link"].includes(args.kind) ? args.kind : "finding";
         const r = await fn("brain-api", { room, author: agent, text: String(args.text ?? "").slice(0, 8000), kind });
         return r.ok ? data({ posted: true, event_id: r.event_id }) : { ...text(r.error ?? "couldn't post"), isError: true };
+      }
+      case "share_file": {
+        const r = await shareFile(room, agent, args);
+        return "error" in r ? { ...text(r.error), isError: true } : data(r);
       }
       case "request_work": {
         const goal = String(args.goal ?? "").slice(0, 4000);
