@@ -1242,7 +1242,16 @@ async function startVoiceNote() {
     rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
   } catch (e) { return toast(`Mic unavailable: ${e.message}`); }
   try { rec.ctx = new AudioContext({ sampleRate: 16000 }); } catch { rec.ctx = new AudioContext(); }
-  const src = rec.ctx.createMediaStreamSource(rec.stream);
+  // Safari, and Chrome after the wait for the mic, start the context paused: nothing would be heard.
+  if (rec.ctx.state === "suspended") await rec.ctx.resume().catch(() => {});
+  let src;
+  try { src = rec.ctx.createMediaStreamSource(rec.stream); } catch {
+    // Firefox won't join a mic to a 16 kHz context: record at the mic's own rate instead.
+    rec.ctx.close();
+    rec.ctx = new AudioContext();
+    if (rec.ctx.state === "suspended") await rec.ctx.resume().catch(() => {});
+    src = rec.ctx.createMediaStreamSource(rec.stream);
+  }
   rec.proc = rec.ctx.createScriptProcessor(4096, 1, 1);
   rec.proc.onaudioprocess = (e) => { rec.frames.push(new Float32Array(e.inputBuffer.getChannelData(0))); e.outputBuffer.getChannelData(0).fill(0); };
   src.connect(rec.proc); rec.proc.connect(rec.ctx.destination);
@@ -1267,7 +1276,10 @@ function stopVoiceNote(send) {
   $("recBar").hidden = true;
   const frames = rec.frames; rec.frames = [];
   if (!send) return toast("Voice note discarded.");
-  if (frames.length * 4096 / rate < 0.8) return toast("That was too short to share.");
+  if (frames.length * 4096 / rate < 0.8) {
+    // Time passed but no sound arrived: the browser kept the mic from us, not a short note.
+    return toast(Date.now() - rec.start > 1500 ? "Your browser didn't let Huddle hear the mic. Try again, or check the mic permission." : "That was too short to share.");
+  }
   const blob = new Blob([encodeWav(frames, rate)], { type: "audio/wav" });
   shareFile(new File([blob], `voice-note-${Date.now()}.wav`, { type: "audio/wav" }), "voice");
 }

@@ -24,7 +24,7 @@ const TIMEOUT_MS = Number(env("OPENAI_TIMEOUT_MS", "240000"));
 type Any = any;
 
 // Gemini's OpenAPI subset (type: "OBJECT") → JSON Schema (type: "object").
-function schema(s: Any): Any {
+export function schema(s: Any): Any {
   if (Array.isArray(s)) return s.map(schema);
   if (!s || typeof s !== "object") return s;
   const out: Record<string, unknown> = {};
@@ -50,7 +50,7 @@ function part(p: Any) {
 }
 
 /** Pull the JSON out of a reply that may carry thinking, a code fence or a sentence around it. */
-function jsonOnly(text: string) {
+export function jsonOnly(text: string) {
   const t = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/);
   const s = (fenced ? fenced[1] : t).trim();

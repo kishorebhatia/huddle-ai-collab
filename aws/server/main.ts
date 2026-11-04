@@ -150,7 +150,8 @@ async function onChange(msg: string) {
   if (![...clients].some((c) => [...c.chans.values()].some((ch) => ch.bindings.some((b) => b.table === t)))) return;
   let row: Record<string, unknown> = { [PK[t] ?? "id"]: pk };
   if (op !== "DELETE") {
-    const rows = await sql`select row_to_json(x) as r from ${sql("public." + t)} x where ${sql(PK[t] ?? "id")}::text = ${pk}`;
+    // The alias names the whole row: a bare one would be read as a column of the same name (board_items.x).
+    const rows = await sql`select row_to_json(huddle_row.*) as r from ${sql("public." + t)} huddle_row where huddle_row.${sql(PK[t] ?? "id")}::text = ${pk}`;
     if (!rows.length) return;
     row = rows[0].r;
   }

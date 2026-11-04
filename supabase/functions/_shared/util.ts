@@ -1,6 +1,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { bedrock } from "./bedrock.ts";
 import { openai } from "./openai.ts";
+import { computer, computerConfigured, computerResting } from "./computer.ts";
 
 export const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +29,32 @@ export const SMART_MODEL = Deno.env.get("GEMINI_SMART_MODEL") ?? FAST_MODEL;
 export type GeminiResult = { text: string; raw: any };
 
 export async function gemini(body: Record<string, unknown>, model = FAST_MODEL): Promise<GeminiResult> {
+  // AI_PROVIDER=computer: the owner's AI on the Computer Huddle runs on, Gemini as the backup. Web search
+  // goes to Gemini first (the Computer's AI can't search); video and PDFs only to Gemini.
+  if (Deno.env.get("AI_PROVIDER") === "computer" && computerConfigured()) {
+    const geminiOnly = hasMime(body, (m) => m.startsWith("video/") || m === "application/pdf");
+    const searchFirst = !!GEMINI_KEY && hasSearch(body);
+    if (!geminiOnly && !searchFirst && !computerResting()) {
+      try {
+        return await computer(body);
+      } catch (e) {
+        if (!GEMINI_KEY) throw e;
+        console.warn(`Computer's AI didn't answer, asking Gemini: ${(e as Error).message}`);
+      }
+    }
+    if (searchFirst && !geminiOnly) {
+      try {
+        return await geminiDirect(body, model);
+      } catch (e) {
+        console.warn(`Gemini search didn't answer, asking the Computer's AI: ${(e as Error).message}`);
+        return await computer(body);
+      }
+    }
+  }
+  return await geminiDirect(body, model);
+}
+
+async function geminiDirect(body: Record<string, unknown>, model: string): Promise<GeminiResult> {
   // AI_PROVIDER=bedrock: same Gemini-shaped request, answered by Bedrock. Audio still needs Gemini.
   if (Deno.env.get("AI_PROVIDER") === "bedrock" && !(GEMINI_KEY && hasAudio(body))) {
     return await bedrock(body);

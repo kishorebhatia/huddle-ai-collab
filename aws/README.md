@@ -173,6 +173,7 @@ After a restore, people sign in again, room keys are entered again, and agents g
 
 **Models.** `AI_PROVIDER=gemini` with `GEMINI_API_KEY` runs everything on Gemini. To stay on Bedrock outside a workshop account, use `AWS_BEARER_TOKEN_BEDROCK`.
 - Model IDs can be overridden with `BEDROCK_FAST_MODEL`, `BEDROCK_SMART_MODEL`, `BEDROCK_SEARCH_MODEL` and `BEDROCK_MEDIA_MODEL`.
+- **On a Computer** (the owner's own server), `AI_PROVIDER=computer` with `COMPUTER_EVENTS_KEY` (Huddle's app key from `/data/secrets/apps/huddle/events.json`) and `COMPUTER_URL=http://host.docker.internal:3090` (run the app with `extra_hosts: ["host.docker.internal:host-gateway"]`) uses the owner's AI there through [computer.ts](../supabase/functions/_shared/computer.ts): briefs, requests, builds and pictures go to `ask_ai`, voice is turned into words by the Computer's own speech service (`transcribe`). Gemini, when `GEMINI_API_KEY` is set, answers web research first (the Computer's AI can't search), video and PDFs, and anything the Computer turns down (a used-up daily allowance rests it for 15 minutes). Give Huddle a room-sized allowance with `"ai_daily"` and `"speech_daily"` in its key file. Check it with `deno run -A aws/tests/computer-ai.ts`.
 - For another provider, add an adapter next to [bedrock.ts](../supabase/functions/_shared/bedrock.ts) with the same `geminiJson` and `gemini` shape.
 - Then run `evals/bakeoff.ts` and the CI gates before switching.
 
